@@ -11,6 +11,7 @@ readme = "README.md"
 dynamic = ["version"]
 
 [project.urls]
+Documentation = "https://obbyworld.github.io/obby-client"
 Repository = "https://github.com/obbyworld/obby-client"
 
 [tool.maturin]

@@ -2,6 +2,7 @@ name: obby_client
 description: The Obby IRCv3 client engine, over its C ABI.
 version: 0.1.3
 repository: https://github.com/obbyworld/obby-client
+homepage: https://obbyworld.github.io/obby-client
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
