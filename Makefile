@@ -3,7 +3,7 @@
 # a Rust staticlib carries no dependencies of its own, so the platform's libraries come last
 FFI_SYSTEM_LIBS := $(if $(filter Darwin,$(shell uname -s)),-framework CoreFoundation -framework Security,-lpthread -ldl -lm)
 .PHONY: help install fix precommit check test live snap snap-accept doc lint fmt-check features wasm-check header msrv deny dupes machete \
-        wasm python dart c-smoke ts-types ts-check site ci release-patch release-minor release-major
+        wasm python dart c-smoke ts-types ts-check site standalone ci release-patch release-minor release-major
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -47,6 +47,11 @@ fmt-check:
 doc:
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps
 
+standalone: ## every binding builds on its own, the way CI and a consumer build it
+	cargo build -p obby-wasm --target wasm32-unknown-unknown
+	cargo build -p obby-ffi
+	cargo build -p obby-python
+
 wasm-check: ## the core and its wasm binding must reach the browser; pyo3 never can
 	cargo check -p obby-proto -p obby-client -p obby-wasm --all-features --target wasm32-unknown-unknown
 
@@ -70,7 +75,7 @@ dupes: ## find copy-pasted code
 machete: ## unused dependencies
 	cargo machete
 
-ci: fmt-check check test doc features wasm-check deny dupes machete ## everything CI runs
+ci: fmt-check check test doc features wasm-check standalone deny dupes machete ## everything CI runs
 
 # --- bindings ---
 
