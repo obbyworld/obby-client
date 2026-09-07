@@ -79,8 +79,8 @@ echo "bumping ${current_version} -> ${new_version}"
 old_re=${current_version//./\\.}
 
 # obby-proto and obby-client also pin their own version as workspace.dependencies path deps
-# (Cargo needs that pin to match for `cargo publish` to resolve them), so they move in lockstep
-# with workspace.package here rather than being left to drift.
+# (Cargo needs that pin to match for `cargo publish` to resolve them), so we move them together
+# with workspace.package here rather than letting them drift.
 awk -v old="$current_version" -v new="$new_version" -v old_re="$old_re" '
   BEGIN { replaced_pkg = 0; replaced_deps = 0 }
   /^\[/ { in_pkg = ($0 == "[workspace.package]") }
@@ -112,9 +112,9 @@ mv "${cargo_toml}.new" "$cargo_toml"
 
 changed_files=("$cargo_toml" "Cargo.lock")
 
-# a hand-authored package.json under bindings/ would carry its own version field; none exists
+# a hand-authored package.json under bindings/ would have its own version field; none exists
 # today (obby-wasm's pkg/package.json is generated at build time from Cargo.toml), but bump it
-# in lockstep if one shows up
+# too if one shows up
 while IFS= read -r -d '' pkg_json; do
   if grep -q '"version"' "$pkg_json"; then
     sed -E "s/(\"version\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")/\1${new_version}\2/" "$pkg_json" >"${pkg_json}.new"
@@ -134,7 +134,7 @@ while IFS= read -r -d '' pyproject; do
   fi
 done < <(find bindings -name 'pyproject.toml' -print0)
 
-# the Dart package carries a hand-written version, since pub.dev has no equivalent of maturin
+# the Dart package has a hand-written version, since pub.dev has no equivalent of maturin
 # reading it back out of Cargo.toml
 while IFS= read -r -d '' pubspec; do
   if grep -qE '^version:[[:space:]]' "$pubspec"; then
@@ -144,7 +144,15 @@ while IFS= read -r -d '' pubspec; do
   fi
 done < <(find bindings -name 'pubspec.yaml' -print0)
 
-echo "running the local gate before committing anything"
+# pub.dev looks for the version in the changelog, and writing what changed stays a human's job
+changelog="bindings/obby-dart/CHANGELOG.md"
+if ! grep -q "^## ${new_version}\$" "$changelog"; then
+  printf '## %s\n\n' "$new_version" | cat - "$changelog" >"${changelog}.new"
+  mv "${changelog}.new" "$changelog"
+  changed_files+=("$changelog")
+fi
+
+echo "running the local checks before committing anything"
 make ci
 
 git add -- "${changed_files[@]}"

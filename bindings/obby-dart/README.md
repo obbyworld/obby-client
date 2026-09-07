@@ -8,7 +8,7 @@ dart pub add obby_client
 ```
 
 The engine is a native library reached through its C ABI, so your application ships `libobby_ffi`
-and points the client at it. Every release carries a build for Linux, macOS and Windows:
+and points the client at it. Every release includes a build for Linux, macOS and Windows:
 <https://github.com/obbyworld/obby-client/releases>.
 
 ```dart

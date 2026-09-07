@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/obbyworld/obby-client/actions/workflows/ci.yml/badge.svg)](https://github.com/obbyworld/obby-client/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/obby-client.svg)](https://crates.io/crates/obby-client)
-[![npm](https://img.shields.io/npm/v/obby-wasm.svg)](https://www.npmjs.com/package/obby-wasm)
+[![npm](https://img.shields.io/npm/v/obby-client.svg)](https://www.npmjs.com/package/obby-client)
 [![PyPI](https://img.shields.io/pypi/v/obby-client.svg)](https://pypi.org/project/obby-client/)
 [![pub.dev](https://img.shields.io/pub/v/obby_client.svg)](https://pub.dev/packages/obby_client)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
@@ -40,7 +40,18 @@ cargo add obby-proto
 One WebAssembly build serves both.
 
 ```sh
-npm install obby-wasm
+npm install obby-client
+```
+
+Every published version is on jsDelivr and unpkg the moment it reaches npm, with no account and no
+setup, so a page can load it without a build step. `init()` fetches the `.wasm` next to the module,
+which both CDNs serve:
+
+```html
+<script type="module">
+  import init, { ObbyClient } from "https://cdn.jsdelivr.net/npm/obby-client@0.1.1/obby_wasm.js";
+  await init();
+</script>
 ```
 
 </details>
@@ -64,15 +75,15 @@ dart pub add obby_client
 ```
 
 The package calls the engine through its C ABI, so your application ships `libobby_ffi` and points
-the client at it: `ObbyClient(config, libraryPath: "...")`. Every GitHub release carries a build for
-Linux, macOS and Windows.
+the client at it: `ObbyClient(config, libraryPath: "...")`. Every GitHub release includes a build
+for Linux, macOS and Windows.
 
 </details>
 
 <details>
 <summary><b>C</b></summary>
 
-Every release carries an archive per platform with the header and the static and shared libraries:
+Every release includes an archive per platform with the header and the static and shared libraries:
 <https://github.com/obbyworld/obby-client/releases>. To build them yourself:
 
 ```sh
@@ -80,7 +91,7 @@ cargo build -p obby-ffi --release
 make header
 ```
 
-The header lands in `bindings/obby-ffi/include/obby_ffi.h` and the libraries in
+The header is written to `bindings/obby-ffi/include/obby_ffi.h` and the libraries to
 `target/release/libobby_ffi.{a,so,dylib}`.
 
 </details>
@@ -122,7 +133,7 @@ conversation, and the messages, capped per target by the retention you configure
 <summary><b>The same loop in TypeScript</b></summary>
 
 ```js
-import init, { ObbyClient } from "obby-wasm";
+import init, { ObbyClient } from "obby-client";
 
 await init();
 const client = new ObbyClient({ nick: "mynick" });
@@ -137,8 +148,8 @@ socket.onmessage = (message) => {
 client.command({ command: "join", channel: "#obby", key: null });
 ```
 
-Events drain as a batch, because one call across the WebAssembly boundary costs the same whether it
-carries one event or a hundred.
+Events drain as a batch, because one call across the WebAssembly boundary costs the same for one
+event as for a hundred.
 
 </details>
 
@@ -219,7 +230,7 @@ only read. Give each thread its own handle, or take your own lock.
 ```sh
 make check   # after every change
 make test
-make ci      # the gate before a commit
+make ci      # everything CI runs, before a commit
 make live    # smoke test against a real server, needs the network
 ```
 

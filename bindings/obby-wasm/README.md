@@ -1,15 +1,15 @@
-# obby-wasm
+# obby-client
 
 The Obby IRCv3 client engine, as WebAssembly. It parses the protocol, drives the connection and
 holds the client model. It opens no socket and keeps no clock, so you hand it bytes and the time.
 One build serves both the browser and Bun.
 
 ```sh
-npm install obby-wasm
+npm install obby-client
 ```
 
 ```js
-import init, { ObbyClient } from "obby-wasm";
+import init, { ObbyClient } from "obby-client";
 
 await init();
 const client = new ObbyClient({ nick: "mynick" });

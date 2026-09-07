@@ -94,7 +94,7 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - run: npm install -g npm@latest
       - uses: taiki-e/install-action@wasm-pack
-      - run: wasm-pack build bindings/obby-wasm --target web --out-dir pkg
+      - run: make wasm
       # provenance is documented as automatic under trusted publishing, but asking for it explicitly
       # costs nothing and has been reported as needed
       - run: npm publish --provenance --access public

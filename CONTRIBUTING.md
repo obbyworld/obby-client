@@ -8,9 +8,9 @@ make install
 
 Run `make check` after every change and `make ci` before every commit. `make help` lists the rest.
 
-The work is done when `make ci` passes, and a failing gate is the thing to fix, never the thing to
-weaken. Nothing outside a test may `unwrap`, `expect` or `panic!`; clippy denies them. A changed
-snapshot is a behaviour change, so read the diff with `make snap` and only then `make snap-accept`.
+The work is done when `make ci` passes. Fix what fails, never weaken the check. Nothing outside a
+test may `unwrap`, `expect` or `panic!`, and clippy denies them. A changed snapshot is a behaviour
+change, so read the diff with `make snap` and only then `make snap-accept`.
 
 Comments explain why, never what. Commit messages are one line.
 
@@ -47,6 +47,7 @@ add a Trusted Publisher: repository owner `obbyworld`, repository `obby-client`,
 
 ### npm
 
+The npm package is named `obby-client`, which `make wasm` writes into the generated `package.json`.
 Needs npm 11.5.1 or newer locally for the first publish.
 
 ```sh
@@ -55,7 +56,7 @@ make wasm
 npm publish --access public bindings/obby-wasm/pkg
 ```
 
-Then at <https://www.npmjs.com/package/obby-wasm/access>, under Trusted publisher, choose GitHub
+Then at <https://www.npmjs.com/package/obby-client/access>, under Trusted publisher, choose GitHub
 Actions with organization `obbyworld`, repository `obby-client`, workflow `release.yml`.
 
 ### PyPI
@@ -77,7 +78,7 @@ Actions with repository `obbyworld/obby-client` and tag pattern `v{{version}}`.
 ## Releasing
 
 ```sh
-scripts/release.sh patch|minor|major
+make release-patch   # or release-minor, release-major
 ```
 
 Bumps the version everywhere it is written, runs `make ci`, then commits, tags and pushes. The tag

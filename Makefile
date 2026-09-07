@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help install fix precommit check test live snap snap-accept doc lint fmt-check features wasm-check header msrv deny dupes machete \
-        wasm python dart ci
+        wasm python dart ci release-patch release-minor release-major
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -34,7 +34,7 @@ fix: ## autofix what is mechanical
 
 precommit: fmt-check check ## hook entry
 
-# --- gates, each mirrors one CI job ---
+# --- checks, each mirrors one CI job ---
 
 fmt-check:
 	cargo fmt --all -- --check
@@ -59,7 +59,7 @@ msrv: ## the crate must build on the rust-version in Cargo.toml
 deny: ## licence and advisory hygiene
 	cargo deny check
 
-dupes: ## copy-paste gate
+dupes: ## find copy-pasted code
 	npx --yes jscpd@4 crates/
 
 machete: ## unused dependencies
@@ -74,6 +74,8 @@ header: ## regenerate the C header from the ffi crate
 
 wasm: ## browser and bun package
 	wasm-pack build bindings/obby-wasm --target web --out-dir pkg
+	# wasm-pack names the package after the crate, and npm shows the name a consumer types
+	cd bindings/obby-wasm/pkg && npm pkg set name=obby-client
 
 python: ## cpython wheel
 	maturin build --release --manifest-path bindings/obby-python/Cargo.toml
@@ -81,3 +83,12 @@ python: ## cpython wheel
 dart: ## dart package, over the freshly built C ABI
 	cargo build -p obby-ffi --release
 	cd bindings/obby-dart && dart pub get && dart analyze && dart test
+
+release-patch: ## bump the patch version, tag it, and push, which publishes everywhere
+	scripts/release.sh patch
+
+release-minor: ## bump the minor version, tag it, and push, which publishes everywhere
+	scripts/release.sh minor
+
+release-major: ## bump the major version, tag it, and push, which publishes everywhere
+	scripts/release.sh major
