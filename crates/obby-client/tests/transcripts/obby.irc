@@ -1,10 +1,14 @@
-# The Obby extensions: named modes, the command list, a link preview and voice signalling.
-< :irc.example.org CAP * LS :message-tags server-time batch draft/named-modes obsidianirc/cmdslist obsidianirc/voice
+# The Obby extensions: named modes, the command list, a link preview, channel-bots, the WHOIS
+# batch and voice signalling.
+< :irc.example.org CAP * LS :message-tags server-time batch draft/named-modes obsidianirc/cmdslist obby.world/whois obby.world/channel-bots draft/bot-cmds obsidianirc/voice
 < :irc.example.org CAP * ACK :message-tags
 < :irc.example.org CAP * ACK :server-time
 < :irc.example.org CAP * ACK :batch
 < :irc.example.org CAP * ACK :draft/named-modes
 < :irc.example.org CAP * ACK :obsidianirc/cmdslist
+< :irc.example.org CAP * ACK :obby.world/whois
+< :irc.example.org CAP * ACK :obby.world/channel-bots
+< :irc.example.org CAP * ACK :draft/bot-cmds
 < :irc.example.org CAP * ACK :obsidianirc/voice
 < :irc.example.org 001 me :Welcome
 < :irc.example.org 005 me CASEMAPPING=ascii CHANTYPES=#^$ PREFIX=(qaohv)~&@%+ CHANMODES=beI,k,l,imnpst WHOX :are supported
@@ -17,5 +21,24 @@
 < :irc.example.org PROP #obby +obsidianirc/censor +obsidianirc/history=30d
 < @msgid=p1;time=2026-09-06T10:00:00.000Z :alice!u@host PRIVMSG #obby :look at https://example.org
 < @+reply=p1;obsidianirc/link-preview-title=Example\sDomain;obsidianirc/link-preview-snippet=A\sdomain\sfor\sexamples :irc.example.org TAGMSG #obby
+# The server-scope bots arrive as one batch on connect; a self-registered bot loses `oper`.
+< :irc.example.org BATCH +b obby.world/channel-bots
+< @batch=b;obby.world/bot-info=eyJldmVudCI6ImFkZCIsImJvdF9pZCI6ImIxIiwibmljayI6IndlYXRoZXJib3QiLCJmcm9tX2NvbmZpZyI6ZmFsc2UsImNoYW5uZWxzIjpbIiNvYmJ5Il0sImNvbW1hbmRzIjpbeyJuYW1lIjoiZm9yZWNhc3QiLCJkZXNjcmlwdGlvbiI6InRoZSB3ZWF0aGVyIn0seyJuYW1lIjoib3BlciJ9XX0= :irc.example.org TAGMSG me
+< :irc.example.org BATCH -b
+< @+draft/bot-cmds=eyJwcmVmaXgiOiIvIiwiY29tbWFuZHMiOlt7Im5hbWUiOiJmb3JlY2FzdCIsImRlc2NyaXB0aW9uIjoidGhlIHdlYXRoZXIifSx7Im5hbWUiOiJyYWRhciJ9XX0= :weatherbot!u@bot.obby.world TAGMSG me
+# One WHOIS, wrapped in the vendor batch, with the per-session numerics in a batch of their own.
+< :irc.example.org BATCH +w obby.world/whois alice
+< @batch=w :irc.example.org BATCH +s obby.world/whois-session
+< @batch=s :irc.example.org 671 me alice :is using a Secure Connection
+< @batch=s :irc.example.org 317 me alice 42 1787477054 :seconds idle, signon time
+< @batch=w :irc.example.org BATCH -s
+< @batch=w :irc.example.org 311 me alice ident host.example * :Alice Smith
+< @batch=w :irc.example.org 312 me alice irc.example.org :ObbyIRCd
+< @batch=w :irc.example.org 319 me alice :~@#obby
+< @batch=w :irc.example.org 330 me alice alice_acct :is logged in as
+< @batch=w :irc.example.org 318 me alice :End of /WHOIS list.
+< :irc.example.org BATCH -w
+# The channel keeps everyone and everything it holds across a rename.
+< :irc.example.org RENAME #obby #obby-world :tidying up
 < :me!u@host JOIN ^general
 < @+obsidianirc/rtc={"type":"join","channel":"^general"} :alice!u@host TAGMSG ^general

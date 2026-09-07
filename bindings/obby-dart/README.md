@@ -37,6 +37,26 @@ Call `close` when finished. The engine holds native memory that Dart's collector
 about. One client belongs to one isolate: the native handle is not synchronised, so give each
 isolate its own.
 
+## The async driver
+
+`ObbyAsyncClient`, from `package:obby_client/obby_client_async.dart`, owns the loop above so you
+don't have to write it: it flushes `pollTransmit`, ticks the clock, schedules the next `tick` from
+`pollTimeout()` with a `Timer`, and hands you the events as a `Stream`.
+
+```dart
+import 'package:obby_client/obby_client_async.dart';
+
+final socket = await Socket.connect('irc.libera.chat', 6667);
+final driver = ObbyAsyncClient(socket, socket.add, nick: 'mynick');
+
+await for (final event in driver.events) {
+  if (event is ObbyEventRegistered) driver.client.join('#obby');
+}
+```
+
+The manual loop shown above still works: the async driver is an optional convenience over it, not
+a replacement for it.
+
 ## Build from source
 
 ```sh

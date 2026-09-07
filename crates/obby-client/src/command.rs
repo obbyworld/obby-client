@@ -155,6 +155,46 @@ pub enum Command {
         /// The keys to watch.
         keys: alloc::vec::Vec<String>,
     },
+    /// Ask the server everything it will say about someone.
+    ///
+    /// The reply is nine numerics; the engine collects them and reports the whole record once.
+    Whois {
+        /// Who to ask about.
+        nick: String,
+    },
+    /// Rename a channel, keeping everyone in it and everything said in it.
+    RenameChannel {
+        /// The channel as it is called now.
+        channel: String,
+        /// What to call it.
+        new_name: String,
+        /// Why, shown to the others in it.
+        reason: Option<String>,
+    },
+    /// Make an invitation link to a channel, or to the network when no channel is named.
+    CreateInviteLink {
+        /// The channel it joins, or nothing to invite to the network.
+        channel: Option<String>,
+        /// What it is for.
+        description: Option<String>,
+    },
+    /// Ask for the invitation links we have made.
+    ListInviteLinks,
+    /// Withdraw an invitation link.
+    DeleteInviteLink {
+        /// Which one, from [`Command::ListInviteLinks`].
+        share_id: String,
+    },
+    /// Redeem an invitation code. Only before registering, which is the point of it.
+    RedeemInviteCode {
+        /// The code, which is the share id of the link that carried it.
+        code: String,
+    },
+    /// Mint a bearer token for one of the network's services, such as its file host.
+    GenerateToken {
+        /// Which service the token is for, such as `FILEHOST`.
+        service: String,
+    },
     /// Watch these nicks, so the server says when they come and go.
     WatchNicks {
         /// The nicks to watch.

@@ -11,6 +11,9 @@ CAP REQ server-time
 CAP REQ batch
 CAP REQ draft/named-modes
 CAP REQ obsidianirc/cmdslist
+CAP REQ obby.world/channel-bots
+CAP REQ draft/bot-cmds
+CAP REQ obby.world/whois
 CAP REQ obsidianirc/voice
 CAP END
 WHO #obby %tcuhnfar,332
@@ -22,7 +25,7 @@ nick: me
 casemapping: Ascii
 
 == channels ==
-#obby (key #obby)  unread 1 mentions 0
+#obby-world (key #obby-world)  unread 1 mentions 0
   named modes: obsidianirc/censor obsidianirc/history=30d
   member @alice (key alice) account=alice_acct
   [1788688800000] Privmsg <alice> look at https://example.org
@@ -31,6 +34,12 @@ casemapping: Ascii
 
 == voice room ^general ==
 kind Publish, 0 participants
+
+== whois alice ==
+Whois { nick: "alice", username: Some("ident"), host: Some("host.example"), realname: Some("Alice Smith"), server: Some("irc.example.org"), server_info: Some("ObbyIRCd"), operator: None, idle_secs: Some(42), signon_ms: Some(1787477054000), channels: ["~@#obby"], account: Some("alice_acct"), actual_host: None, secure: true, complete: true }
+
+== bot weatherbot ==
+weatherbot (id Some("b1"), from config false)  commands: forecast radar
 
 == commands the server allows ==
 JOIN PART TOPIC
@@ -41,6 +50,9 @@ CapabilitiesAcknowledged { names: ["server-time"] }
 CapabilitiesAcknowledged { names: ["batch"] }
 CapabilitiesAcknowledged { names: ["draft/named-modes"] }
 CapabilitiesAcknowledged { names: ["obsidianirc/cmdslist"] }
+CapabilitiesAcknowledged { names: ["obby.world/whois"] }
+CapabilitiesAcknowledged { names: ["obby.world/channel-bots"] }
+CapabilitiesAcknowledged { names: ["draft/bot-cmds"] }
 CapabilitiesAcknowledged { names: ["obsidianirc/voice"] }
 Registered { nick: "me" }
 IsupportToken { token: "CASEMAPPING", value: Some("ascii") }
@@ -55,5 +67,9 @@ ModelChanged { change: ChannelMembersChanged { channel: "#obby" } }
 ModelChanged { change: ChannelModesChanged { channel: "#obby" } }
 ModelChanged { change: MessageAdded { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
 ModelChanged { change: MessageAdded { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
+BotsChanged { nick: "weatherbot" }
+BotsChanged { nick: "weatherbot" }
+ModelChanged { change: WhoisReceived { nick: "alice" } }
+ModelChanged { change: ChannelRenamed { from: "#obby", to: "#obby-world" } }
 ModelChanged { change: ChannelJoined { channel: "^general" } }
 Voice { channel: "^general", signal: Join { channel: "^general" } }

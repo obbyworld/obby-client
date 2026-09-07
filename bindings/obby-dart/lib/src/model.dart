@@ -396,6 +396,13 @@ sealed class Command {
       'fetch_history' => CommandFetchHistory.fromJson(json),
       'set_metadata' => CommandSetMetadata.fromJson(json),
       'subscribe_metadata' => CommandSubscribeMetadata.fromJson(json),
+      'whois' => CommandWhois.fromJson(json),
+      'rename_channel' => CommandRenameChannel.fromJson(json),
+      'create_invite_link' => CommandCreateInviteLink.fromJson(json),
+      'list_invite_links' => CommandListInviteLinks.fromJson(json),
+      'delete_invite_link' => CommandDeleteInviteLink.fromJson(json),
+      'redeem_invite_code' => CommandRedeemInviteCode.fromJson(json),
+      'generate_token' => CommandGenerateToken.fromJson(json),
       'watch_nicks' => CommandWatchNicks.fromJson(json),
       'unwatch_nicks' => CommandUnwatchNicks.fromJson(json),
       'send_voice_signal' => CommandSendVoiceSignal.fromJson(json),
@@ -811,6 +818,147 @@ class CommandSubscribeMetadata extends Command {
 
   /// The keys to watch.
   final List<String> keys;
+}
+
+class CommandWhois extends Command {
+  const CommandWhois({
+    required this.nick,
+  });
+
+  factory CommandWhois.fromJson(Map<String, dynamic> json) => CommandWhois(
+    nick: json['nick'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'whois',
+    'nick': nick,
+  };
+
+  /// Who to ask about.
+  final String nick;
+}
+
+class CommandRenameChannel extends Command {
+  const CommandRenameChannel({
+    required this.channel,
+    required this.new_name,
+    required this.reason,
+  });
+
+  factory CommandRenameChannel.fromJson(Map<String, dynamic> json) => CommandRenameChannel(
+    channel: json['channel'] as String,
+    new_name: json['new_name'] as String,
+    reason: json['reason'] == null ? null : json['reason'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'rename_channel',
+    'channel': channel,
+    'new_name': new_name,
+    'reason': reason,
+  };
+
+  /// The channel as it is called now.
+  final String channel;
+
+  /// What to call it.
+  final String new_name;
+
+  /// Why, shown to the others in it.
+  final String? reason;
+}
+
+class CommandCreateInviteLink extends Command {
+  const CommandCreateInviteLink({
+    required this.channel,
+    required this.description,
+  });
+
+  factory CommandCreateInviteLink.fromJson(Map<String, dynamic> json) => CommandCreateInviteLink(
+    channel: json['channel'] == null ? null : json['channel'] as String,
+    description: json['description'] == null ? null : json['description'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'create_invite_link',
+    'channel': channel,
+    'description': description,
+  };
+
+  /// The channel it joins, or nothing to invite to the network.
+  final String? channel;
+
+  /// What it is for.
+  final String? description;
+}
+
+class CommandListInviteLinks extends Command {
+  const CommandListInviteLinks();
+
+  factory CommandListInviteLinks.fromJson(Map<String, dynamic> json) => const CommandListInviteLinks();
+
+  @override
+  Map<String, dynamic> toJson() => {'type': 'list_invite_links'};
+}
+
+class CommandDeleteInviteLink extends Command {
+  const CommandDeleteInviteLink({
+    required this.share_id,
+  });
+
+  factory CommandDeleteInviteLink.fromJson(Map<String, dynamic> json) => CommandDeleteInviteLink(
+    share_id: json['share_id'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'delete_invite_link',
+    'share_id': share_id,
+  };
+
+  /// Which one, from [`Command::ListInviteLinks`].
+  final String share_id;
+}
+
+class CommandRedeemInviteCode extends Command {
+  const CommandRedeemInviteCode({
+    required this.code,
+  });
+
+  factory CommandRedeemInviteCode.fromJson(Map<String, dynamic> json) => CommandRedeemInviteCode(
+    code: json['code'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'redeem_invite_code',
+    'code': code,
+  };
+
+  /// The code, which is the share id of the link that carried it.
+  final String code;
+}
+
+class CommandGenerateToken extends Command {
+  const CommandGenerateToken({
+    required this.service,
+  });
+
+  factory CommandGenerateToken.fromJson(Map<String, dynamic> json) => CommandGenerateToken(
+    service: json['service'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'generate_token',
+    'service': service,
+  };
+
+  /// Which service the token is for, such as `FILEHOST`.
+  final String service;
 }
 
 class CommandWatchNicks extends Command {
@@ -1448,6 +1596,7 @@ class Model {
     required this.channels,
     required this.conversations,
     required this.people,
+    required this.whois,
     required this.retention,
     required this.next_seq,
   });
@@ -1457,6 +1606,7 @@ class Model {
     channels: (json['channels'] as Map<String, dynamic>).map((k, v) => MapEntry(k, Channel.fromJson(v as Map<String, dynamic>))),
     conversations: (json['conversations'] as Map<String, dynamic>).map((k, v) => MapEntry(k, Conversation.fromJson(v as Map<String, dynamic>))),
     people: (json['people'] as Map<String, dynamic>).map((k, v) => MapEntry(k, Person.fromJson(v as Map<String, dynamic>))),
+    whois: (json['whois'] as Map<String, dynamic>).map((k, v) => MapEntry(k, Whois.fromJson(v as Map<String, dynamic>))),
     retention: json['retention'] as int,
     next_seq: json['next_seq'] as int,
   );
@@ -1466,6 +1616,7 @@ class Model {
     'channels': channels.map((k, v) => MapEntry(k, v.toJson())),
     'conversations': conversations.map((k, v) => MapEntry(k, v.toJson())),
     'people': people.map((k, v) => MapEntry(k, v.toJson())),
+    'whois': whois.map((k, v) => MapEntry(k, v.toJson())),
     'retention': retention,
     'next_seq': next_seq,
   };
@@ -1478,6 +1629,8 @@ class Model {
   final Map<CaseFolded, Conversation> conversations;
 
   final Map<CaseFolded, Person> people;
+
+  final Map<CaseFolded, Whois> whois;
 
   final int retention;
 
@@ -1504,6 +1657,8 @@ sealed class ModelChange {
       'message_reacted' => ModelChangeMessageReacted.fromJson(json),
       'message_redacted' => ModelChangeMessageRedacted.fromJson(json),
       'metadata_changed' => ModelChangeMetadataChanged.fromJson(json),
+      'whois_received' => ModelChangeWhoisReceived.fromJson(json),
+      'channel_renamed' => ModelChangeChannelRenamed.fromJson(json),
       _ => throw ArgumentError.value(tag, 'type', 'unknown ModelChange variant'),
     };
   }
@@ -1748,6 +1903,50 @@ class ModelChangeMetadataChanged extends ModelChange {
   final String key;
 }
 
+class ModelChangeWhoisReceived extends ModelChange {
+  const ModelChangeWhoisReceived({
+    required this.nick,
+  });
+
+  factory ModelChangeWhoisReceived.fromJson(Map<String, dynamic> json) => ModelChangeWhoisReceived(
+    nick: json['nick'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'whois_received',
+    'nick': nick,
+  };
+
+  /// Who it describes.
+  final String nick;
+}
+
+class ModelChangeChannelRenamed extends ModelChange {
+  const ModelChangeChannelRenamed({
+    required this.from,
+    required this.to,
+  });
+
+  factory ModelChangeChannelRenamed.fromJson(Map<String, dynamic> json) => ModelChangeChannelRenamed(
+    from: json['from'] as String,
+    to: json['to'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'channel_renamed',
+    'from': from,
+    'to': to,
+  };
+
+  /// What it was called.
+  final String from;
+
+  /// What it is called now.
+  final String to;
+}
+
 /// Something the host needs to know about.
 /// Events are drained with [`Client::poll_event`] rather than delivered through a callback, because
 /// a callback needs a different lifetime, threading and re-entrancy contract in every language this
@@ -1772,6 +1971,8 @@ sealed class ObbyEvent {
       'reconnect_abandoned' => ObbyEventReconnectAbandoned.fromJson(json),
       'command_timed_out' => ObbyEventCommandTimedOut.fromJson(json),
       'allowed_commands_changed' => ObbyEventAllowedCommandsChanged.fromJson(json),
+      'bots_changed' => ObbyEventBotsChanged.fromJson(json),
+      'auth_token' => ObbyEventAuthToken.fromJson(json),
       'voice' => ObbyEventVoice.fromJson(json),
       'typing_changed' => ObbyEventTypingChanged.fromJson(json),
       'presence_changed' => ObbyEventPresenceChanged.fromJson(json),
@@ -1990,6 +2191,56 @@ class ObbyEventAllowedCommandsChanged extends ObbyEvent {
 
   @override
   Map<String, dynamic> toJson() => {'type': 'allowed_commands_changed'};
+}
+
+class ObbyEventBotsChanged extends ObbyEvent {
+  const ObbyEventBotsChanged({
+    required this.nick,
+  });
+
+  factory ObbyEventBotsChanged.fromJson(Map<String, dynamic> json) => ObbyEventBotsChanged(
+    nick: json['nick'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'bots_changed',
+    'nick': nick,
+  };
+
+  /// The bot the server told us about.
+  final String nick;
+}
+
+class ObbyEventAuthToken extends ObbyEvent {
+  const ObbyEventAuthToken({
+    required this.service,
+    required this.endpoint,
+    required this.token,
+  });
+
+  factory ObbyEventAuthToken.fromJson(Map<String, dynamic> json) => ObbyEventAuthToken(
+    service: json['service'] as String,
+    endpoint: json['endpoint'] as String,
+    token: json['token'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'auth_token',
+    'service': service,
+    'endpoint': endpoint,
+    'token': token,
+  };
+
+  /// The service it is for, as the server spells it.
+  final String service;
+
+  /// Where to present it.
+  final String endpoint;
+
+  /// The token itself.
+  final String token;
 }
 
 class ObbyEventVoice extends ObbyEvent {
@@ -3078,4 +3329,103 @@ class WatchList {
   final List<CaseFolded> watching;
 
   final List<CaseFolded> online;
+}
+
+/// What a `WHOIS` said about someone.
+/// A reply is nine numerics that arrive one at a time, so they are collected here and reported once,
+/// when the closing `318` lands. A host that reacted to each numeric would redraw a profile card
+/// nine times and show eight incomplete ones.
+class Whois {
+  const Whois({
+    required this.nick,
+    required this.username,
+    required this.host,
+    required this.realname,
+    required this.server,
+    required this.server_info,
+    required this.operator,
+    required this.idle_secs,
+    required this.signon_ms,
+    required this.channels,
+    required this.account,
+    required this.actual_host,
+    required this.secure,
+    required this.complete,
+  });
+
+  factory Whois.fromJson(Map<String, dynamic> json) => Whois(
+    nick: json['nick'] as String,
+    username: json['username'] == null ? null : json['username'] as String,
+    host: json['host'] == null ? null : json['host'] as String,
+    realname: json['realname'] == null ? null : json['realname'] as String,
+    server: json['server'] == null ? null : json['server'] as String,
+    server_info: json['server_info'] == null ? null : json['server_info'] as String,
+    operator: json['operator'] == null ? null : json['operator'] as String,
+    idle_secs: json['idle_secs'] == null ? null : json['idle_secs'] as int,
+    signon_ms: json['signon_ms'] == null ? null : json['signon_ms'] as int,
+    channels: (json['channels'] as List).map((e) => e as String).toList(),
+    account: json['account'] == null ? null : json['account'] as String,
+    actual_host: json['actual_host'] == null ? null : json['actual_host'] as String,
+    secure: json['secure'] as bool,
+    complete: json['complete'] as bool,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'nick': nick,
+    'username': username,
+    'host': host,
+    'realname': realname,
+    'server': server,
+    'server_info': server_info,
+    'operator': operator,
+    'idle_secs': idle_secs,
+    'signon_ms': signon_ms,
+    'channels': channels.map((e) => e).toList(),
+    'account': account,
+    'actual_host': actual_host,
+    'secure': secure,
+    'complete': complete,
+  };
+
+  /// Their nick, as the server spells it.
+  final String nick;
+
+  /// Their username, from `311`.
+  final String? username;
+
+  /// Their host, from `311`.
+  final String? host;
+
+  /// Their realname, from `311`.
+  final String? realname;
+
+  /// The server they are on, from `312`.
+  final String? server;
+
+  /// What that server calls itself, from `312`.
+  final String? server_info;
+
+  /// How the server describes their operator privileges, from `313`, when they have any.
+  final String? operator;
+
+  /// How long they have been idle, from `317`.
+  final int? idle_secs;
+
+  /// When they connected, in milliseconds since the Unix epoch, from `317`.
+  final int? signon_ms;
+
+  /// The channels they are in, keeping the prefix each one carries, from `319`.
+  final List<String> channels;
+
+  /// The account they are logged in as, from `330`.
+  final String? account;
+
+  /// Where they are connecting from, as the server words it, from `338` or `378`.
+  final String? actual_host;
+
+  /// True when the server said the connection is over TLS, from `671`.
+  final bool secure;
+
+  /// True once the closing `318` arrived and there is nothing more to come.
+  final bool complete;
 }

@@ -31,6 +31,7 @@ crates/
     src/label.rs       labeled-response correlation
     src/command.rs     what a host asks the connection to do
     src/monitor.rs     watching who is online
+    src/json.rs        the JSON a wire tag carries, read without a JSON crate
     src/extensions.rs  the Obby extensions: link previews, command list, invitations, bots
     src/voice.rs       voice signalling and room state, never the media plane
     src/e2ee.rs        X3DH and the double ratchet
@@ -38,9 +39,9 @@ crates/
   examples/echo-bot.rs a working client in one file, built by CI
 bindings/
   obby-ffi/            the C ABI, and the only place unsafe lives
-  obby-wasm/           one wasm-pack artifact for the browser and for Bun
+  obby-wasm/           one wasm-pack artifact for the browser and for Bun, plus driver.ts
   obby-python/         PyO3, packaged by maturin
-  obby-dart/           a Dart package over the C ABI, no second Rust crate
+  obby-dart/           a Dart package over the C ABI, plus obby_client_async.dart
 ```
 
 ## Commands

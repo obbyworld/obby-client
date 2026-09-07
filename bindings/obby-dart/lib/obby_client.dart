@@ -412,6 +412,60 @@ class ObbyClient {
     command({'type': 'subscribe_metadata', 'keys': keys});
   }
 
+  /// Ask the server everything it will say about someone.
+  ///
+  /// The record lands in the model under the folded nick and arrives as one `whois_received`
+  /// change when the reply finishes.
+  void whois(String nick) {
+    _alive();
+    command({'type': 'whois', 'nick': nick});
+  }
+
+  /// Rename a channel, keeping everyone in it and everything said in it.
+  void renameChannel(String channel, String newName, {String? reason}) {
+    _alive();
+    command({
+      'type': 'rename_channel',
+      'channel': channel,
+      'new_name': newName,
+      'reason': reason,
+    });
+  }
+
+  /// Make an invitation link to a channel, or to the network when no channel is named.
+  void createInviteLink({String? channel, String? description}) {
+    _alive();
+    command({
+      'type': 'create_invite_link',
+      'channel': channel,
+      'description': description,
+    });
+  }
+
+  /// Ask for the invitation links we have made.
+  void listInviteLinks() {
+    _alive();
+    command({'type': 'list_invite_links'});
+  }
+
+  /// Withdraw an invitation link.
+  void deleteInviteLink(String shareId) {
+    _alive();
+    command({'type': 'delete_invite_link', 'share_id': shareId});
+  }
+
+  /// Redeem an invitation code. Only before registering, which is the point of it.
+  void redeemInviteCode(String code) {
+    _alive();
+    command({'type': 'redeem_invite_code', 'code': code});
+  }
+
+  /// Mint a bearer token for one of the network's services, such as its file host.
+  void generateToken(String service) {
+    _alive();
+    command({'type': 'generate_token', 'service': service});
+  }
+
   /// Watch these nicks, so the server says when they come and go.
   void watchNicks(List<String> nicks) {
     _alive();

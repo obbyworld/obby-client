@@ -292,6 +292,51 @@ impl Client {
         self.inner.command(Command::SubscribeMetadata { keys });
     }
 
+    /// Ask the server everything it will say about someone. The record lands in the model under
+    /// the folded nick and arrives as one `whois_received` change when the reply finishes.
+    fn whois(&mut self, nick: String) {
+        self.inner.command(Command::Whois { nick });
+    }
+
+    /// Rename a channel, keeping everyone in it and everything said in it.
+    #[pyo3(signature = (channel, new_name, reason=None))]
+    fn rename_channel(&mut self, channel: String, new_name: String, reason: Option<String>) {
+        self.inner.command(Command::RenameChannel {
+            channel,
+            new_name,
+            reason,
+        });
+    }
+
+    /// Make an invitation link to a channel, or to the network when no channel is named.
+    #[pyo3(signature = (channel=None, description=None))]
+    fn create_invite_link(&mut self, channel: Option<String>, description: Option<String>) {
+        self.inner.command(Command::CreateInviteLink {
+            channel,
+            description,
+        });
+    }
+
+    /// Ask for the invitation links we have made.
+    fn list_invite_links(&mut self) {
+        self.inner.command(Command::ListInviteLinks);
+    }
+
+    /// Withdraw an invitation link.
+    fn delete_invite_link(&mut self, share_id: String) {
+        self.inner.command(Command::DeleteInviteLink { share_id });
+    }
+
+    /// Redeem an invitation code. Only before registering, which is the point of it.
+    fn redeem_invite_code(&mut self, code: String) {
+        self.inner.command(Command::RedeemInviteCode { code });
+    }
+
+    /// Mint a bearer token for one of the network's services, such as its file host.
+    fn generate_token(&mut self, service: String) {
+        self.inner.command(Command::GenerateToken { service });
+    }
+
     /// Watch these nicks, so the server says when they come and go.
     fn watch_nicks(&mut self, nicks: Vec<String>) {
         self.inner.command(Command::WatchNicks { nicks });

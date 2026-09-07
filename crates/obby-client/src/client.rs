@@ -160,6 +160,22 @@ pub enum Event {
     /// The set of commands the server allows us changed.
     #[cfg(feature = "obby")]
     AllowedCommandsChanged,
+    /// What we know about a bot changed. Read it back from [`Client::bots`].
+    #[cfg(feature = "obby")]
+    BotsChanged {
+        /// The bot the server told us about.
+        nick: String,
+    },
+    /// The server minted a bearer token for one of its services.
+    #[cfg(feature = "obby")]
+    AuthToken {
+        /// The service it is for, as the server spells it.
+        service: String,
+        /// Where to present it.
+        endpoint: String,
+        /// The token itself.
+        token: String,
+    },
     /// A voice signalling frame arrived, and the room state has already been updated for it.
     ///
     /// The host handles the media plane: this carries the session descriptions and candidates it
@@ -227,6 +243,8 @@ pub struct Client {
     rooms: alloc::collections::BTreeMap<obby_proto::CaseFolded, crate::voice::Room>,
     #[cfg(feature = "obby")]
     commands: crate::extensions::Commands,
+    #[cfg(feature = "obby")]
+    bots: crate::extensions::Bots,
     timers: Timers,
     labels: Labels<String>,
     backoff: ReconnectBackoff,
@@ -286,6 +304,8 @@ impl Client {
             rooms: alloc::collections::BTreeMap::new(),
             #[cfg(feature = "obby")]
             commands: crate::extensions::Commands::new(),
+            #[cfg(feature = "obby")]
+            bots: crate::extensions::Bots::new(),
             timers: Timers::new(),
             labels: Labels::new(),
             backoff: ReconnectBackoff::default(),
@@ -349,6 +369,9 @@ impl Client {
         self.caps = Capabilities::default();
         self.sasl = SaslState::default();
         self.monitor.forget_presence();
+        self.model.forget_whois();
+        #[cfg(feature = "obby")]
+        self.bots.forget();
         // who was in a channel is only true while we are connected to hear about it. The messages
         // stay, because they happened; the member lists do not, because they are a live view
         for (_, channel) in self.model.channels_mut() {
@@ -582,6 +605,62 @@ impl Client {
         self.command(Command::SubscribeMetadata { keys });
     }
 
+    /// Ask the server everything it will say about someone.
+    ///
+    /// The record lands in the model under the folded nick and arrives as one
+    /// [`Change::WhoisReceived`] when the reply finishes.
+    pub fn whois(&mut self, nick: impl Into<String>) {
+        self.command(Command::Whois { nick: nick.into() });
+    }
+
+    /// Rename a channel, keeping everyone in it and everything said in it.
+    pub fn rename_channel(
+        &mut self,
+        channel: impl Into<String>,
+        new_name: impl Into<String>,
+        reason: Option<String>,
+    ) {
+        self.command(Command::RenameChannel {
+            channel: channel.into(),
+            new_name: new_name.into(),
+            reason,
+        });
+    }
+
+    /// Make an invitation link to a channel, or to the network when no channel is named.
+    pub fn create_invite_link(&mut self, channel: Option<String>, description: Option<String>) {
+        self.command(Command::CreateInviteLink {
+            channel,
+            description,
+        });
+    }
+
+    /// Ask for the invitation links we have made.
+    pub fn list_invite_links(&mut self) {
+        self.command(Command::ListInviteLinks);
+    }
+
+    /// Withdraw an invitation link.
+    pub fn delete_invite_link(&mut self, share_id: impl Into<String>) {
+        self.command(Command::DeleteInviteLink {
+            share_id: share_id.into(),
+        });
+    }
+
+    /// Redeem an invitation code. Only before registering, which is the point of it.
+    pub fn redeem_invite_code(&mut self, code: impl Into<String>) {
+        self.command(Command::RedeemInviteCode { code: code.into() });
+    }
+
+    /// Mint a bearer token for one of the network's services, such as its file host.
+    ///
+    /// The token comes back as an [`Event::AuthToken`].
+    pub fn generate_token(&mut self, service: impl Into<String>) {
+        self.command(Command::GenerateToken {
+            service: service.into(),
+        });
+    }
+
     /// Watch nicks, so we hear when they come online.
     pub fn watch_nicks(&mut self, nicks: Vec<String>) {
         self.command(Command::WatchNicks { nicks });
@@ -723,26 +802,28 @@ impl Client {
                 target,
                 before_msgid,
                 limit,
-            } => match before_msgid {
-                Some(msgid) => Message::new(
-                    "CHATHISTORY",
-                    [
-                        "BEFORE".to_string(),
-                        target,
-                        alloc::format!("msgid={msgid}"),
-                        limit.to_string(),
-                    ],
-                ),
-                None => Message::new(
-                    "CHATHISTORY",
-                    [
-                        "LATEST".to_string(),
-                        target,
-                        "*".to_string(),
-                        limit.to_string(),
-                    ],
-                ),
+            } => Self::chathistory(target, before_msgid, limit),
+            Command::Whois { nick } => Message::new("WHOIS", [nick]),
+            Command::RenameChannel {
+                channel,
+                new_name,
+                reason,
+            } => match reason {
+                Some(reason) => Message::new("RENAME", [channel, new_name, reason]),
+                None => Message::new("RENAME", [channel, new_name]),
             },
+            Command::CreateInviteLink {
+                channel,
+                description,
+            } => Self::invite_link(channel, description),
+            Command::ListInviteLinks => Message::new("INVITELINK", ["LIST"]),
+            Command::DeleteInviteLink { share_id } => {
+                Message::new("INVITELINK", ["DELETE".to_string(), share_id])
+            }
+            Command::RedeemInviteCode { code } => Message::new("INVITECODE", [code]),
+            Command::GenerateToken { service } => {
+                Message::new("TOKEN", ["GENERATE".to_string(), service])
+            }
             Command::SetMetadata { key, value } => match value {
                 Some(value) => {
                     Message::new("METADATA", ["*".to_string(), "SET".to_string(), key, value])
@@ -779,6 +860,33 @@ impl Client {
         for chunk in monitor::batched(nicks, limit) {
             self.send_line(&Message::new("MONITOR", [verb.to_string(), chunk]));
         }
+    }
+
+    /// Ask for a page of history: the newest messages, or the ones before a message we hold.
+    fn chathistory(target: String, before_msgid: Option<String>, limit: u16) -> Message {
+        let (selector, point) = match before_msgid {
+            Some(msgid) => ("BEFORE", alloc::format!("msgid={msgid}")),
+            None => ("LATEST", "*".to_string()),
+        };
+        Message::new(
+            "CHATHISTORY",
+            [selector.to_string(), target, point, limit.to_string()],
+        )
+    }
+
+    /// Ask for an invitation link to a channel, or to the network.
+    ///
+    /// The channel is positional, so a description with no channel in front of it needs the `*` the
+    /// server itself uses to mean the whole network.
+    fn invite_link(channel: Option<String>, description: Option<String>) -> Message {
+        let mut params = alloc::vec!["CREATE".to_string()];
+        match (channel, &description) {
+            (Some(channel), _) => params.push(channel),
+            (None, Some(_)) => params.push("*".to_string()),
+            (None, None) => {}
+        }
+        params.extend(description);
+        Message::new("INVITELINK", params)
     }
 
     fn reaction(tag: &str, target: &str, msgid: &str, emoji: &str) -> Message {
@@ -1011,6 +1119,12 @@ impl Client {
         &self.commands
     }
 
+    /// The bots the server has told us about, keyed by their folded nick.
+    #[cfg(feature = "obby")]
+    pub fn bots(&self) -> &crate::extensions::Bots {
+        &self.bots
+    }
+
     /// The voice room for a channel, once we have heard any signalling for it.
     ///
     /// Signalling and room state only. Every track, codec and peer connection is the host's, and
@@ -1072,6 +1186,14 @@ impl Client {
         }
         #[cfg(feature = "voice")]
         if message.is("TAGMSG") && self.handle_rtc(&message) {
+            return;
+        }
+        #[cfg(feature = "obby")]
+        if message.is("TAGMSG") && self.handle_bot_tags(&message) {
+            return;
+        }
+        #[cfg(feature = "obby")]
+        if message.is("TOKEN") && self.handle_token(&message) {
             return;
         }
         #[cfg(feature = "obby")]
@@ -1169,6 +1291,9 @@ impl Client {
             session::apply(&mut ctx, message)
         };
         if changes.is_empty() {
+            if session::accumulates(&message.command.to_ascii_uppercase()) {
+                return;
+            }
             self.events.push_back(Event::RawLine {
                 message: message.clone(),
             });
@@ -1179,6 +1304,18 @@ impl Client {
             // who these people actually are
             if let Change::ChannelJoined { channel } = change {
                 self.request_who(channel);
+            }
+            // the key and the room are keyed by the folded name the channel no longer has, and the
+            // key is what a reconnect needs to get back in
+            if let Change::ChannelRenamed { from, to } = change {
+                let (from, to) = (self.isupport.fold(from), self.isupport.fold(to));
+                if let Some(key) = self.channel_keys.remove(&from) {
+                    self.channel_keys.insert(to.clone(), key);
+                }
+                #[cfg(feature = "voice")]
+                if let Some(room) = self.rooms.remove(&from) {
+                    self.rooms.insert(to, room);
+                }
             }
         }
         for change in changes {
@@ -1426,6 +1563,75 @@ impl Client {
         self.events.push_back(Event::Voice {
             channel: channel.to_string(),
             signal,
+        });
+        true
+    }
+
+    /// Apply a channel-bots announcement or a bot's command list, if the line carries one.
+    ///
+    /// Both ride on a bodiless TAGMSG, batched on connect and unbatched afterwards, and neither is
+    /// a message: filing one as one would put an empty row in a conversation.
+    #[cfg(feature = "obby")]
+    fn handle_bot_tags(&mut self, message: &Message) -> bool {
+        use crate::extensions::{BOT_COMMANDS_TAG, BOT_INFO_TAG, BotInfo, decode_bot_commands};
+
+        if let Some(payload) = message.tag(BOT_INFO_TAG) {
+            let Some(info) = BotInfo::decode(payload) else {
+                self.dropped_lines = self.dropped_lines.saturating_add(1);
+                return true;
+            };
+            let nick = info.bot.nick.clone();
+            let key = self.isupport.fold(&nick).into_string();
+            if info.removed {
+                self.bots.remove(&key);
+            } else {
+                self.bots.insert(key.clone(), info.bot);
+                // the announcement's own list goes through the same gate a bot's does, so a
+                // self-registered bot cannot claim a privileged name by either route
+                self.bots.set_commands(&key, info.commands);
+            }
+            self.events.push_back(Event::BotsChanged { nick });
+            return true;
+        }
+
+        let Some(payload) = message.tag(BOT_COMMANDS_TAG) else {
+            return false;
+        };
+        let (Some(commands), Some(source)) = (
+            decode_bot_commands(payload),
+            message.source.as_ref().map(|source| source.name.clone()),
+        ) else {
+            self.dropped_lines = self.dropped_lines.saturating_add(1);
+            return true;
+        };
+        // a list from a nick the server never announced as a bot is refused: accepting one would
+        // let anybody put entries in the command menu
+        if self
+            .bots
+            .set_commands(self.isupport.fold(&source).as_str(), commands)
+        {
+            self.events.push_back(Event::BotsChanged { nick: source });
+        }
+        true
+    }
+
+    /// Surface a minted bearer token, from `TOKEN GENERATE <service> <endpoint> <token>`.
+    ///
+    /// Returns false for any other shape, so it still reaches the host raw.
+    #[cfg(feature = "obby")]
+    fn handle_token(&mut self, message: &Message) -> bool {
+        if message.param(0).is_none_or(|sub| sub != "GENERATE") {
+            return false;
+        }
+        let (Some(service), Some(endpoint), Some(token)) =
+            (message.param(1), message.param(2), message.param(3))
+        else {
+            return false;
+        };
+        self.events.push_back(Event::AuthToken {
+            service: service.to_string(),
+            endpoint: endpoint.to_string(),
+            token: token.to_string(),
         });
         true
     }
@@ -2427,6 +2633,14 @@ mod command_tests {
         out
     }
 
+    fn events(client: &mut Client) -> Vec<Event> {
+        let mut out = Vec::new();
+        while let Some(event) = client.poll_event() {
+            out.push(event);
+        }
+        out
+    }
+
     fn log_len(client: &Client, channel: &str) -> usize {
         client
             .model()
@@ -2578,6 +2792,84 @@ mod command_tests {
             limit: 50,
         });
         assert!(sent(&mut client).contains("CHATHISTORY BEFORE #obby msgid=m1 50"));
+    }
+
+    #[test]
+    fn an_invitation_to_the_network_still_carries_its_description() {
+        let mut client = ready(b":s CAP * NAK :echo-message\r\n");
+        client.command(Command::CreateInviteLink {
+            channel: None,
+            description: Some("for the team".to_string()),
+        });
+        assert!(
+            sent(&mut client).contains("INVITELINK CREATE * :for the team"),
+            "the channel is positional, so the network needs the star the server itself uses"
+        );
+
+        client.command(Command::CreateInviteLink {
+            channel: None,
+            description: None,
+        });
+        assert!(sent(&mut client).contains("INVITELINK CREATE\r\n"));
+
+        client.command(Command::CreateInviteLink {
+            channel: Some("#obby".to_string()),
+            description: None,
+        });
+        assert!(sent(&mut client).contains("INVITELINK CREATE #obby"));
+    }
+
+    #[test]
+    fn the_rest_of_the_invitation_commands_travel_whole() {
+        let mut client = ready(b":s CAP * NAK :echo-message\r\n");
+        client.command(Command::ListInviteLinks);
+        client.command(Command::DeleteInviteLink {
+            share_id: "abc123".to_string(),
+        });
+        client.command(Command::RedeemInviteCode {
+            code: "abc123".to_string(),
+        });
+        client.command(Command::Whois {
+            nick: "bob".to_string(),
+        });
+        client.command(Command::RenameChannel {
+            channel: "#obby".to_string(),
+            new_name: "#obby-world".to_string(),
+            reason: Some("tidying up".to_string()),
+        });
+        let sent = sent(&mut client);
+        assert!(sent.contains("INVITELINK LIST"));
+        assert!(sent.contains("INVITELINK DELETE abc123"));
+        assert!(sent.contains("INVITECODE abc123"));
+        assert!(sent.contains("WHOIS bob"));
+        assert!(sent.contains("RENAME #obby #obby-world :tidying up"));
+    }
+
+    #[test]
+    fn a_minted_token_reaches_the_host() {
+        let mut client = ready(b":s CAP * NAK :echo-message\r\n");
+        client.command(Command::GenerateToken {
+            service: "FILEHOST".to_string(),
+        });
+        assert!(sent(&mut client).contains("TOKEN GENERATE FILEHOST"));
+
+        client.handle_bytes(b":s TOKEN GENERATE filehost https://irc.example.org tok3n\r\n");
+        assert!(events(&mut client).iter().any(|event| matches!(
+            event,
+            Event::AuthToken { service, endpoint, token }
+                if service == "filehost" && endpoint == "https://irc.example.org" && token == "tok3n"
+        )));
+    }
+
+    #[test]
+    fn a_token_line_we_cannot_read_still_reaches_the_host_raw() {
+        let mut client = ready(b":s CAP * NAK :echo-message\r\n");
+        client.handle_bytes(b":s TOKEN REVOKED filehost\r\n");
+        assert!(
+            events(&mut client)
+                .iter()
+                .any(|event| matches!(event, Event::RawLine { .. }))
+        );
     }
 
     #[test]
@@ -2845,6 +3137,121 @@ mod typing_tests {
     }
 }
 
+#[cfg(all(test, feature = "obby"))]
+mod bot_tests {
+    use super::*;
+
+    fn joined() -> Client {
+        let mut client = Client::new(Config::new("me"));
+        client.handle_bytes(b":s 001 me :Welcome\r\n");
+        client.handle_bytes(b":s 005 me CHANTYPES=# CASEMAPPING=ascii :are supported\r\n");
+        client.handle_bytes(b":me!u@h JOIN #obby\r\n");
+        while client.poll_event().is_some() {}
+        client
+    }
+
+    /// One bodiless TAGMSG carrying a base64 JSON tag, with any extra tags in front of it.
+    fn tagged(extra: &str, tag: &str, json: &str, from: &str) -> alloc::vec::Vec<u8> {
+        use base64::Engine as _;
+        let payload = base64::engine::general_purpose::STANDARD.encode(json);
+        alloc::format!("@{extra}{tag}={payload} :{from} TAGMSG me\r\n").into_bytes()
+    }
+
+    #[test]
+    fn a_discovery_batch_fills_the_registry_without_filling_the_conversation() {
+        let mut client = joined();
+        client.handle_bytes(b":s BATCH +b obby.world/channel-bots\r\n");
+        client.handle_bytes(&tagged(
+            "batch=b;",
+            "obby.world/bot-info",
+            r#"{"event":"add","bot_id":"b1","nick":"WeatherBot","from_config":false,"commands":[{"name":"forecast"},{"name":"identify"}]}"#,
+            "s",
+        ));
+        client.handle_bytes(b":s BATCH -b\r\n");
+
+        let bot = client.bots().get("weatherbot").expect("the bot");
+        assert_eq!(bot.nick, "WeatherBot");
+        assert_eq!(bot.id.as_deref(), Some("b1"));
+        assert_eq!(
+            bot.commands.len(),
+            1,
+            "a bot that registered itself must not shadow a privileged name"
+        );
+        assert_eq!(bot.commands[0].name, "forecast");
+        assert!(
+            client
+                .model()
+                .conversation(&client.isupport().fold("s"))
+                .is_none(),
+            "an announcement is not a message"
+        );
+    }
+
+    #[test]
+    fn a_withdrawal_forgets_the_bot() {
+        let mut client = joined();
+        client.handle_bytes(&tagged(
+            "",
+            "obby.world/bot-info",
+            r#"{"event":"add","nick":"weatherbot"}"#,
+            "s",
+        ));
+        client.handle_bytes(&tagged(
+            "",
+            "obby.world/bot-info",
+            r#"{"event":"remove","nick":"weatherbot"}"#,
+            "s",
+        ));
+        assert!(client.bots().is_empty());
+    }
+
+    #[test]
+    fn a_command_list_from_a_nick_we_were_never_told_about_is_refused() {
+        let mut client = joined();
+        client.handle_bytes(&tagged(
+            "",
+            "+draft/bot-cmds",
+            r#"{"commands":[{"name":"forecast"}]}"#,
+            "stranger!u@h",
+        ));
+        assert!(
+            client.bots().is_empty(),
+            "anyone could otherwise put entries in the command menu"
+        );
+    }
+
+    #[test]
+    fn a_command_list_from_an_announced_bot_is_kept() {
+        let mut client = joined();
+        client.handle_bytes(&tagged(
+            "",
+            "obby.world/bot-info",
+            r#"{"event":"add","nick":"weatherbot","from_config":true}"#,
+            "s",
+        ));
+        client.handle_bytes(&tagged(
+            "",
+            "+draft/bot-cmds",
+            r#"{"prefix":"/","commands":[{"name":"identify"}]}"#,
+            "WeatherBot!u@bot.obby.world",
+        ));
+        let bot = client.bots().get("weatherbot").expect("the bot");
+        assert_eq!(
+            bot.commands.len(),
+            1,
+            "a bot an operator configured may claim a privileged name"
+        );
+    }
+
+    #[test]
+    fn an_announcement_we_cannot_read_is_counted_rather_than_shown() {
+        let mut client = joined();
+        client.handle_bytes(b"@obby.world/bot-info=not-base64-$$$ :s TAGMSG me\r\n");
+        assert!(client.bots().is_empty());
+        assert!(client.dropped_lines() > 0);
+    }
+}
+
 #[cfg(all(test, feature = "voice"))]
 mod voice_tests {
     use super::*;
@@ -3065,6 +3472,75 @@ mod config_tests {
         assert!(
             sent.contains("USER me 0 * me"),
             "registering with an empty username is refused outright by some servers, got: {sent}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod live_view_tests {
+    use super::*;
+
+    #[test]
+    fn a_renamed_channel_keeps_the_key_a_reconnect_needs() {
+        let mut client = Client::new(Config::new("me"));
+        client.handle_bytes(b":s 001 me :Welcome\r\n");
+        client.join("#obby", Some("hunter2".to_string()));
+        client.handle_bytes(b":me!u@h JOIN #obby\r\n");
+        while client.poll_transmit().is_some() {}
+
+        client.handle_bytes(b":s RENAME #obby #obby-world :spring clean\r\n");
+        client.handle_disconnected();
+        client.handle_connected();
+        // the rejoin rides on registration finishing, not on the socket coming up
+        client.handle_bytes(b":s 001 me :Welcome\r\n");
+
+        let mut sent = alloc::string::String::new();
+        while let Some(bytes) = client.poll_transmit() {
+            sent.push_str(&alloc::string::String::from_utf8_lossy(&bytes));
+        }
+        assert!(
+            sent.contains("JOIN #obby-world hunter2"),
+            "a rejoin without the key is refused by the server, and the key is filed under the \
+             name the channel had: {sent}"
+        );
+    }
+
+    #[test]
+    fn a_dead_link_forgets_what_only_held_while_connected() {
+        let mut client = Client::new(Config::new("me"));
+        client.handle_bytes(b":s 001 me :Welcome\r\n");
+        client.handle_bytes(b":s 311 me alice ident host.example * :Alice\r\n");
+        client.handle_bytes(b":s 318 me alice :End of /WHOIS\r\n");
+        assert!(
+            client
+                .model()
+                .whois(&client.isupport().fold("alice"))
+                .is_some()
+        );
+
+        client.handle_disconnected();
+
+        assert!(
+            client
+                .model()
+                .whois(&client.isupport().fold("alice"))
+                .is_none(),
+            "a record from a connection that ended must not merge into the next one"
+        );
+    }
+
+    #[test]
+    fn a_server_naming_endless_nicks_cannot_grow_the_model_without_bound() {
+        let mut client = Client::new(Config::new("me"));
+        client.handle_bytes(b":s 001 me :Welcome\r\n");
+        for index in 0..500 {
+            let line = alloc::format!(":s 311 me nick{index} ident host * :Someone\r\n");
+            client.handle_bytes(line.as_bytes());
+        }
+
+        assert!(
+            client.model().whois_records().count() <= 64,
+            "the model holds what a host asked for, not what a server volunteered"
         );
     }
 }

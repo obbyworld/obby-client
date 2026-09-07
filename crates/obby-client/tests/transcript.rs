@@ -75,6 +75,22 @@ fn render(client: &Client, sent: &[String], events: &[Event]) -> String {
         }
     }
 
+    for (key, whois) in client.model().whois_records() {
+        let _ = writeln!(out, "\n== whois {key} ==\n{whois:?}");
+    }
+
+    for (key, bot) in client.bots().iter() {
+        let commands: Vec<&str> = bot.commands.iter().map(|c| c.name.as_str()).collect();
+        let _ = writeln!(
+            out,
+            "\n== bot {key} ==\n{} (id {:?}, from config {})  commands: {}",
+            bot.nick,
+            bot.id,
+            bot.from_config,
+            commands.join(" ")
+        );
+    }
+
     let allowed: Vec<&str> = client.allowed_commands().iter().collect();
     if !allowed.is_empty() {
         let _ = writeln!(

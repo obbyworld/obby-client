@@ -45,6 +45,17 @@ class Client:
     ) -> None: ...
     def set_metadata(self, key: str, value: str | None = None) -> None: ...
     def subscribe_metadata(self, keys: list[str]) -> None: ...
+    def whois(self, nick: str) -> None: ...
+    def rename_channel(
+        self, channel: str, new_name: str, reason: str | None = None
+    ) -> None: ...
+    def create_invite_link(
+        self, channel: str | None = None, description: str | None = None
+    ) -> None: ...
+    def list_invite_links(self) -> None: ...
+    def delete_invite_link(self, share_id: str) -> None: ...
+    def redeem_invite_code(self, code: str) -> None: ...
+    def generate_token(self, service: str) -> None: ...
     def watch_nicks(self, nicks: list[str]) -> None: ...
     def unwatch_nicks(self, nicks: list[str]) -> None: ...
     def send_voice_signal(self, channel: str, signal: VoiceSignal | str) -> None: ...
@@ -209,6 +220,36 @@ class CommandSubscribeMetadata(TypedDict):
     type: Literal["subscribe_metadata"]
     keys: list[str]
 
+class CommandWhois(TypedDict):
+    type: Literal["whois"]
+    nick: str
+
+class CommandRenameChannel(TypedDict):
+    type: Literal["rename_channel"]
+    channel: str
+    new_name: str
+    reason: str | None
+
+class CommandCreateInviteLink(TypedDict):
+    type: Literal["create_invite_link"]
+    channel: str | None
+    description: str | None
+
+class CommandListInviteLinks(TypedDict):
+    type: Literal["list_invite_links"]
+
+class CommandDeleteInviteLink(TypedDict):
+    type: Literal["delete_invite_link"]
+    share_id: str
+
+class CommandRedeemInviteCode(TypedDict):
+    type: Literal["redeem_invite_code"]
+    code: str
+
+class CommandGenerateToken(TypedDict):
+    type: Literal["generate_token"]
+    service: str
+
 class CommandWatchNicks(TypedDict):
     type: Literal["watch_nicks"]
     nicks: list[str]
@@ -230,7 +271,7 @@ class CommandSendRawLine(TypedDict):
     type: Literal["send_raw_line"]
     line: str
 
-Command = Union[CommandJoin, CommandPart, CommandSendMessage, CommandSendNotice, CommandSendAction, CommandSetNick, CommandSetTopic, CommandSetAway, CommandSetTyping, CommandAddReaction, CommandRemoveReaction, CommandRedactMessage, CommandMarkRead, CommandFetchHistory, CommandSetMetadata, CommandSubscribeMetadata, CommandWatchNicks, CommandUnwatchNicks, CommandSendVoiceSignal, CommandQuit, CommandSendRawLine]
+Command = Union[CommandJoin, CommandPart, CommandSendMessage, CommandSendNotice, CommandSendAction, CommandSetNick, CommandSetTopic, CommandSetAway, CommandSetTyping, CommandAddReaction, CommandRemoveReaction, CommandRedactMessage, CommandMarkRead, CommandFetchHistory, CommandSetMetadata, CommandSubscribeMetadata, CommandWhois, CommandRenameChannel, CommandCreateInviteLink, CommandListInviteLinks, CommandDeleteInviteLink, CommandRedeemInviteCode, CommandGenerateToken, CommandWatchNicks, CommandUnwatchNicks, CommandSendVoiceSignal, CommandQuit, CommandSendRawLine]
 
 
 class _ConfigRequired(TypedDict):
@@ -352,6 +393,7 @@ class Model(TypedDict):
     channels: dict[CaseFolded, Channel]
     conversations: dict[CaseFolded, Conversation]
     people: dict[CaseFolded, Person]
+    whois: dict[CaseFolded, Whois]
     retention: int
     next_seq: int
 
@@ -402,7 +444,13 @@ class ModelChangeMetadataChanged(TypedDict):
     target: str
     key: str
 
-ModelChange = Union[ModelChangeMessageAdded, ModelChangeChannelJoined, ModelChangeChannelParted, ModelChangeChannelMembersChanged, ModelChangeChannelTopicChanged, ModelChangeNickChanged, ModelChangeChannelModesChanged, ModelChangeReadMarkerMoved, ModelChangeMessageReacted, ModelChangeMessageRedacted, ModelChangeMetadataChanged]
+class ModelChangeWhoisReceived(TypedDict):
+    type: Literal["whois_received"]
+    nick: str
+
+ModelChangeChannelRenamed = TypedDict("ModelChangeChannelRenamed", {"type": Literal["channel_renamed"], "from": str, "to": str})
+
+ModelChange = Union[ModelChangeMessageAdded, ModelChangeChannelJoined, ModelChangeChannelParted, ModelChangeChannelMembersChanged, ModelChangeChannelTopicChanged, ModelChangeNickChanged, ModelChangeChannelModesChanged, ModelChangeReadMarkerMoved, ModelChangeMessageReacted, ModelChangeMessageRedacted, ModelChangeMetadataChanged, ModelChangeWhoisReceived, ModelChangeChannelRenamed]
 
 
 class ObbyEventCapabilitiesAcknowledged(TypedDict):
@@ -452,6 +500,16 @@ class ObbyEventCommandTimedOut(TypedDict):
 class ObbyEventAllowedCommandsChanged(TypedDict):
     type: Literal["allowed_commands_changed"]
 
+class ObbyEventBotsChanged(TypedDict):
+    type: Literal["bots_changed"]
+    nick: str
+
+class ObbyEventAuthToken(TypedDict):
+    type: Literal["auth_token"]
+    service: str
+    endpoint: str
+    token: str
+
 class ObbyEventVoice(TypedDict):
     type: Literal["voice"]
     channel: str
@@ -480,7 +538,7 @@ class ObbyEventRawLine(TypedDict):
     type: Literal["raw_line"]
     message: RawMessage
 
-ObbyEvent = Union[ObbyEventCapabilitiesAcknowledged, ObbyEventRegistered, ObbyEventIsupportToken, ObbyEventLoggedIn, ObbyEventSaslFailed, ObbyEventNickInUse, ObbyEventModelChanged, ObbyEventLinkDead, ObbyEventReconnectAfter, ObbyEventReconnectAbandoned, ObbyEventCommandTimedOut, ObbyEventAllowedCommandsChanged, ObbyEventVoice, ObbyEventTypingChanged, ObbyEventPresenceChanged, ObbyEventServerReply, ObbyEventRawLine]
+ObbyEvent = Union[ObbyEventCapabilitiesAcknowledged, ObbyEventRegistered, ObbyEventIsupportToken, ObbyEventLoggedIn, ObbyEventSaslFailed, ObbyEventNickInUse, ObbyEventModelChanged, ObbyEventLinkDead, ObbyEventReconnectAfter, ObbyEventReconnectAbandoned, ObbyEventCommandTimedOut, ObbyEventAllowedCommandsChanged, ObbyEventBotsChanged, ObbyEventAuthToken, ObbyEventVoice, ObbyEventTypingChanged, ObbyEventPresenceChanged, ObbyEventServerReply, ObbyEventRawLine]
 
 
 OnOff = Literal["on", "off"]
@@ -667,5 +725,22 @@ class VoiceTrackHint(TypedDict):
 class WatchList(TypedDict):
     watching: list[CaseFolded]
     online: list[CaseFolded]
+
+
+class Whois(TypedDict):
+    nick: str
+    username: str | None
+    host: str | None
+    realname: str | None
+    server: str | None
+    server_info: str | None
+    operator: str | None
+    idle_secs: int | None
+    signon_ms: int | None
+    channels: list[str]
+    account: str | None
+    actual_host: str | None
+    secure: bool
+    complete: bool
 
 # --- generated model types: end ---

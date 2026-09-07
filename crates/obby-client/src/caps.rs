@@ -8,7 +8,10 @@ use alloc::vec::Vec;
 /// The capabilities this engine knows how to use, in the order we ask for them.
 ///
 /// A capability we do not name here is never requested, because requesting one we cannot handle
-/// changes what the server sends and breaks parsing.
+/// changes what the server sends and breaks parsing. That is why `draft/whoami`,
+/// `draft/account-registration`, `draft/account-2fa`, `soju.im/bouncer-networks` with its `-notify`
+/// companion, `unrealircd.org/json-log`, `draft/bot-tools` and `draft/persistence` are absent:
+/// nothing here reads what they would make the server send.
 pub const WANTED_CAPS: &[&str] = &[
     // parsing changes, so these come first
     "message-tags",
@@ -45,12 +48,6 @@ pub const WANTED_CAPS: &[&str] = &[
     "draft/extended-isupport",
     "draft/extended-isupport-0.2",
     "sasl",
-    "draft/whoami",
-    "draft/account-registration",
-    "draft/account-2fa",
-    // the -notify variant pushes network changes at us, so we never poll LISTNETWORKS
-    "soju.im/bouncer-networks",
-    "soju.im/bouncer-networks-notify",
     "znc.in/playback",
     #[cfg(feature = "obby")]
     "obsidianirc/cmdslist",
@@ -58,8 +55,6 @@ pub const WANTED_CAPS: &[&str] = &[
     "obby.world/channel-bots",
     #[cfg(feature = "obby")]
     "draft/bot-cmds",
-    #[cfg(feature = "obby")]
-    "draft/bot-tools",
     // without this the server falls back to unwrapped legacy WHOIS numerics
     #[cfg(feature = "obby")]
     "obby.world/whois",
@@ -67,11 +62,6 @@ pub const WANTED_CAPS: &[&str] = &[
     "obby.world/invitation",
     #[cfg(feature = "obby")]
     "draft/authtoken",
-    // ObbyIRCd's own, despite the draft/ spelling: no such IRCv3 specification exists
-    #[cfg(feature = "obby")]
-    "draft/persistence",
-    #[cfg(feature = "obby")]
-    "unrealircd.org/json-log",
     #[cfg(feature = "voice")]
     "obsidianirc/voice",
 ];

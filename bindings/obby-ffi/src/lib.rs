@@ -439,6 +439,10 @@ pub enum ObbyEventKind {
     ServerReply,
     /// A line the engine does not model. The message is in [`obby_event_json`].
     RawLine,
+    /// What we know about a bot changed.
+    BotsChanged,
+    /// The server minted a bearer token for one of its services.
+    AuthToken,
 }
 
 /// One value on an [`ObbyEvent`].
@@ -482,6 +486,12 @@ pub enum ObbyEventField {
     Active,
     /// 1 when someone is online, 0 when they are not. Read with [`obby_event_number`].
     Online,
+    /// The network service a token is for.
+    Service,
+    /// Where to present a token.
+    Endpoint,
+    /// A bearer token. `Token` is already the name of a `005` token, which this is not.
+    BearerToken,
 }
 
 /// One event, owned by the caller until [`obby_event_free`].
@@ -505,6 +515,24 @@ impl ObbyEvent {
     fn number(&mut self, field: ObbyEventField, value: u64) {
         self.numbers.push((field, value));
     }
+}
+
+/// Flatten a `standard-replies` FAIL, WARN or NOTE onto the event.
+fn server_reply_out(
+    out: &mut ObbyEvent,
+    severity: obby_client::Severity,
+    command: &str,
+    code: &str,
+    text: &str,
+) {
+    out.kind = ObbyEventKind::ServerReply;
+    out.text(
+        ObbyEventField::Severity,
+        &format!("{severity:?}").to_lowercase(),
+    );
+    out.text(ObbyEventField::Command, command);
+    out.text(ObbyEventField::Code, code);
+    out.text(ObbyEventField::Text, text);
 }
 
 /// Flatten an event into the C view of it, keeping the whole thing as JSON alongside.
@@ -584,15 +612,20 @@ fn event_out(event: &Event) -> ObbyEvent {
             code,
             text,
             ..
+        } => server_reply_out(&mut out, *severity, command, code, text),
+        Event::BotsChanged { nick } => {
+            out.kind = ObbyEventKind::BotsChanged;
+            out.text(ObbyEventField::Nick, nick);
+        }
+        Event::AuthToken {
+            service,
+            endpoint,
+            token,
         } => {
-            out.kind = ObbyEventKind::ServerReply;
-            out.text(
-                ObbyEventField::Severity,
-                &format!("{severity:?}").to_lowercase(),
-            );
-            out.text(ObbyEventField::Command, command);
-            out.text(ObbyEventField::Code, code);
-            out.text(ObbyEventField::Text, text);
+            out.kind = ObbyEventKind::AuthToken;
+            out.text(ObbyEventField::Service, service);
+            out.text(ObbyEventField::Endpoint, endpoint);
+            out.text(ObbyEventField::BearerToken, token);
         }
         Event::RawLine { .. } => out.kind = ObbyEventKind::RawLine,
         // Event is non-exhaustive, so a version of the engine newer than this ABI reaches a C
@@ -1008,6 +1041,126 @@ pub unsafe extern "C" fn obby_client_subscribe_metadata(
         submit(client, || {
             Some(Command::SubscribeMetadata {
                 keys: strings_from_ptr_array(keys, count),
+            })
+        })
+    }
+}
+
+/// Ask the server everything it will say about someone.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_whois(client: *mut ObbyClient, nick: *const c_char) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Whois {
+                nick: str_from_ptr(nick)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Rename a channel, keeping everyone in it and everything said in it. `reason` may be null.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_rename_channel(
+    client: *mut ObbyClient,
+    channel: *const c_char,
+    new_name: *const c_char,
+    reason: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::RenameChannel {
+                channel: str_from_ptr(channel)?.to_owned(),
+                new_name: str_from_ptr(new_name)?.to_owned(),
+                reason: str_from_ptr(reason).map(ToOwned::to_owned),
+            })
+        })
+    }
+}
+
+/// Make an invitation link. A null `channel` invites to the network; `description` may be null too.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_create_invite_link(
+    client: *mut ObbyClient,
+    channel: *const c_char,
+    description: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::CreateInviteLink {
+                channel: str_from_ptr(channel).map(ToOwned::to_owned),
+                description: str_from_ptr(description).map(ToOwned::to_owned),
+            })
+        })
+    }
+}
+
+/// Ask for the invitation links we have made.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_list_invite_links(client: *mut ObbyClient) -> bool {
+    unsafe { submit(client, || Some(Command::ListInviteLinks)) }
+}
+
+/// Withdraw an invitation link.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_delete_invite_link(
+    client: *mut ObbyClient,
+    share_id: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::DeleteInviteLink {
+                share_id: str_from_ptr(share_id)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Redeem an invitation code. Only before registering, which is the point of it.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_redeem_invite_code(
+    client: *mut ObbyClient,
+    code: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::RedeemInviteCode {
+                code: str_from_ptr(code)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Mint a bearer token for one of the network's services, such as its file host.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_generate_token(
+    client: *mut ObbyClient,
+    service: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::GenerateToken {
+                service: str_from_ptr(service)?.to_owned(),
             })
         })
     }

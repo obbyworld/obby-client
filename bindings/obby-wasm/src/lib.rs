@@ -286,6 +286,54 @@ impl ObbyClient {
         self.apply(Command::SubscribeMetadata { keys });
     }
 
+    /// Ask the server everything it will say about someone.
+    pub fn whois(&mut self, nick: String) {
+        self.apply(Command::Whois { nick });
+    }
+
+    /// Rename a channel, keeping everyone in it and everything said in it.
+    #[wasm_bindgen(js_name = renameChannel)]
+    pub fn rename_channel(&mut self, channel: String, new_name: String, reason: Option<String>) {
+        self.apply(Command::RenameChannel {
+            channel,
+            new_name,
+            reason,
+        });
+    }
+
+    /// Make an invitation link to a channel, or to the network when no channel is named.
+    #[wasm_bindgen(js_name = createInviteLink)]
+    pub fn create_invite_link(&mut self, channel: Option<String>, description: Option<String>) {
+        self.apply(Command::CreateInviteLink {
+            channel,
+            description,
+        });
+    }
+
+    /// Ask for the invitation links we have made.
+    #[wasm_bindgen(js_name = listInviteLinks)]
+    pub fn list_invite_links(&mut self) {
+        self.apply(Command::ListInviteLinks);
+    }
+
+    /// Withdraw an invitation link.
+    #[wasm_bindgen(js_name = deleteInviteLink)]
+    pub fn delete_invite_link(&mut self, share_id: String) {
+        self.apply(Command::DeleteInviteLink { share_id });
+    }
+
+    /// Redeem an invitation code. Only before registering, which is the point of it.
+    #[wasm_bindgen(js_name = redeemInviteCode)]
+    pub fn redeem_invite_code(&mut self, code: String) {
+        self.apply(Command::RedeemInviteCode { code });
+    }
+
+    /// Mint a bearer token for one of the network's services, such as its file host.
+    #[wasm_bindgen(js_name = generateToken)]
+    pub fn generate_token(&mut self, service: String) {
+        self.apply(Command::GenerateToken { service });
+    }
+
     /// Watch nicks, so we hear when they come online.
     #[wasm_bindgen(js_name = watchNicks)]
     pub fn watch_nicks(&mut self, nicks: Vec<String>) {

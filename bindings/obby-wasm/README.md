@@ -34,6 +34,27 @@ client.command({ type: "join", channel: "#obby", key: null });
 their messages. `client.pollTimeout()` says when `client.tick(performance.now(), Date.now())` next matters,
 so a host can sleep until then.
 
+## The driver
+
+`obby-client/driver` owns the loop above, so you don't have to write it: it flushes
+`pollTransmit`, ticks the clock, schedules the next `tick` from `pollTimeout()`, and hands you the
+events as an async iterator.
+
+```ts
+import { connect } from "obby-client/driver";
+
+const socket = new WebSocket("wss://irc.example.org/webirc");
+socket.binaryType = "arraybuffer";
+
+const { client, events } = connect(socket, { nick: "mynick" });
+for await (const event of events()) {
+  if (event.type === "registered") client.join("#obby");
+}
+```
+
+The manual loop shown above still works: the driver is an optional convenience over it, not a
+replacement for it.
+
 ## Build from source
 
 ```sh

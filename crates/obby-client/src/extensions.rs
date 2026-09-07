@@ -11,6 +11,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use obby_proto::Message as Line;
 
+use crate::json::{Json, field_string};
+
 /// A preview of a link someone posted, built by the server and attached to the message.
 ///
 /// The server fetches the page; a client never does. There is no capability to negotiate, and the
@@ -211,6 +213,77 @@ pub const PRIVILEGED_COMMANDS: &[&str] = &[
     "oper", "identify", "nickserv", "chanserv", "ns", "cs", "register", "pass", "auth", "login",
 ];
 
+/// The tag an announcement of a bot rides on, on a bodiless `TAGMSG`.
+///
+/// The published extensions repository names the batch `obby.world/bot-list` and puts the payload
+/// under `draft/bot-cmds`; the wire uses the capability name as the batch type and this tag.
+pub(crate) const BOT_INFO_TAG: &str = "obby.world/bot-info";
+
+/// The tag a bot answers a command-list query with, on a bodiless `TAGMSG`.
+pub(crate) const BOT_COMMANDS_TAG: &str = "+draft/bot-cmds";
+
+/// One announcement the server made about a bot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BotInfo {
+    /// True when the server is withdrawing the bot.
+    pub removed: bool,
+    /// The bot, with no commands on it yet: those go through [`Bots::set_commands`], which is where
+    /// the privileged-name rule lives.
+    pub bot: Bot,
+    /// The commands the announcement carried.
+    pub commands: Vec<BotCommand>,
+}
+
+impl BotInfo {
+    /// Read the base64 JSON an `obby.world/bot-info` tag carries.
+    pub(crate) fn decode(payload: &str) -> Option<Self> {
+        let value = decode_tag_json(payload)?;
+        let nick = field_string(&value, "nick")?;
+        Some(Self {
+            removed: field_string(&value, "event").as_deref() == Some("remove"),
+            bot: Bot {
+                nick,
+                id: field_string(&value, "bot_id"),
+                from_config: value.field("from_config") == Some(&Json::Bool(true)),
+                commands: Vec::new(),
+            },
+            commands: bot_commands(&value),
+        })
+    }
+}
+
+/// Read the base64 JSON a `+draft/bot-cmds` tag carries.
+///
+/// The payload is `{prefix?, commands}` on one line, never batch-wrapped, whatever the published
+/// specification's example shows.
+pub(crate) fn decode_bot_commands(payload: &str) -> Option<Vec<BotCommand>> {
+    Some(bot_commands(&decode_tag_json(payload)?))
+}
+
+fn decode_tag_json(payload: &str) -> Option<Json> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(payload)
+        .ok()?;
+    Json::parse(core::str::from_utf8(&bytes).ok()?)
+}
+
+/// The `commands` array of a bot payload, skipping any entry with no name to type.
+fn bot_commands(value: &Json) -> Vec<BotCommand> {
+    value
+        .field("commands")
+        .and_then(Json::as_array)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|command| {
+            Some(BotCommand {
+                name: field_string(command, "name")?,
+                description: field_string(command, "description"),
+            })
+        })
+        .collect()
+}
+
 /// The bots we know about, keyed by their folded nick.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -234,6 +307,14 @@ impl Bots {
     /// Forget a bot.
     pub fn remove(&mut self, key: &str) -> Option<Bot> {
         self.known.remove(key)
+    }
+
+    /// Forget every bot.
+    ///
+    /// Which bots exist is a live view: a server replays what it knows on connect and says nothing
+    /// about one that was removed while we were away.
+    pub fn forget(&mut self) {
+        self.known.clear();
     }
 
     /// A bot we know about.
@@ -461,6 +542,54 @@ mod tests {
             "anyone could otherwise put entries in the command menu"
         );
         assert!(bots.is_empty());
+    }
+
+    fn base64(text: &str) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(text)
+    }
+
+    #[test]
+    fn a_bot_announcement_reads_back() {
+        let info = BotInfo::decode(&base64(
+            r#"{"event":"add","bot_id":"b1","nick":"weatherbot","from_config":true,"commands":[{"name":"forecast","description":"the weather"},{"name":"nodesc"}]}"#,
+        ))
+        .expect("an announcement");
+        assert!(!info.removed);
+        assert_eq!(info.bot.nick, "weatherbot");
+        assert_eq!(info.bot.id.as_deref(), Some("b1"));
+        assert!(info.bot.from_config);
+        assert_eq!(info.commands.len(), 2);
+        assert_eq!(info.commands[0].description.as_deref(), Some("the weather"));
+        assert_eq!(info.commands[1].description, None);
+    }
+
+    #[test]
+    fn a_withdrawal_says_so() {
+        let info = BotInfo::decode(&base64(r#"{"event":"remove","nick":"weatherbot"}"#))
+            .expect("an announcement");
+        assert!(info.removed);
+        assert!(
+            !info.bot.from_config,
+            "a bot must opt in to the trusted set"
+        );
+    }
+
+    #[test]
+    fn an_announcement_with_no_nick_is_not_one() {
+        assert!(BotInfo::decode(&base64(r#"{"event":"add","bot_id":"b1"}"#)).is_none());
+        assert!(BotInfo::decode("not base64 at all $$$").is_none());
+        assert!(BotInfo::decode(&base64("{not json")).is_none());
+    }
+
+    #[test]
+    fn a_command_list_arrives_on_its_own_line() {
+        let commands = decode_bot_commands(&base64(
+            r#"{"prefix":"/","commands":[{"name":"forecast"}]}"#,
+        ))
+        .expect("a command list");
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].name, "forecast");
     }
 
     #[test]

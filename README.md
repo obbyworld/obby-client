@@ -27,7 +27,12 @@ and a socket.
   you, with the parts everyone gets wrong: casemapping, deduplicated replays, merged history pages,
   a reconnect that replays what you had.
 - **It runs where you run.** No sockets, no timers, no threads, no async runtime. A browser tab, a
-  terminal, a Flutter app, an embedded target: same engine, your transport.
+  terminal, a Flutter app, an embedded target: same engine, your transport. TypeScript and Dart
+  also ship an optional driver that owns the loop for you.
+- **It speaks what the server speaks.** Every capability it negotiates has a handler behind it:
+  SASL, batches, history, read markers, reactions, redaction, metadata, monitoring, named modes,
+  WHOIS, multiline, channel renames, and on an Obby server the bots, invitations, tokens, voice
+  signalling and end-to-end encryption.
 
 ## Installation
 
@@ -159,6 +164,32 @@ A full connection against a real server, TLS included, is
 
 The model is readable at any moment through `client.model()`: every channel, who is in it, every
 conversation, and the messages, capped per target by the retention you configure.
+
+### If you would rather not write the loop
+
+TypeScript and Dart ship an optional driver that owns it, so a host only reads events. Both sleep
+until the engine's next deadline, and the manual loop above keeps working.
+
+```ts
+import { connect } from "obby-client/driver";
+
+const { client, events } = connect(new WebSocket("wss://irc.example.org/webirc"), { nick: "mynick" });
+for await (const event of events()) {
+  if (event.type === "registered") client.join("#obby");
+}
+```
+
+```dart
+import 'package:obby_client/obby_client_async.dart';
+
+final socket = await Socket.connect('irc.example.org', 6667);
+final client = ObbyAsyncClient(socket, socket.add, nick: 'mynick');
+await for (final event in client.events) {
+  if (event is ObbyEventRegistered) client.client.join('#obby');
+}
+```
+
+Python and Rust have no driver yet: both write the loop, which is a dozen lines in each.
 
 <details>
 <summary><b>The same loop in TypeScript</b></summary>

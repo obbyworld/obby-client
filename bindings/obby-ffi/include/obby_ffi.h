@@ -95,6 +95,14 @@ typedef enum obby_event_kind {
      * A line the engine does not model. The message is in [`obby_event_json`].
      */
     OBBY_EVENT_KIND_RAW_LINE,
+    /**
+     * What we know about a bot changed.
+     */
+    OBBY_EVENT_KIND_BOTS_CHANGED,
+    /**
+     * The server minted a bearer token for one of its services.
+     */
+    OBBY_EVENT_KIND_AUTH_TOKEN,
 } obby_event_kind;
 
 /**
@@ -172,6 +180,18 @@ typedef enum obby_event_field {
      * 1 when someone is online, 0 when they are not. Read with [`obby_event_number`].
      */
     OBBY_EVENT_FIELD_ONLINE,
+    /**
+     * The network service a token is for.
+     */
+    OBBY_EVENT_FIELD_SERVICE,
+    /**
+     * Where to present a token.
+     */
+    OBBY_EVENT_FIELD_ENDPOINT,
+    /**
+     * A bearer token. `Token` is already the name of a `005` token, which this is not.
+     */
+    OBBY_EVENT_FIELD_BEARER_TOKEN,
 } obby_event_field;
 
 /**
@@ -569,6 +589,67 @@ bool obby_client_set_metadata(struct obby_client_t *client, const char *key, con
 bool obby_client_subscribe_metadata(struct obby_client_t *client,
                                     const char *const *keys,
                                     size_t count);
+
+/**
+ * Ask the server everything it will say about someone.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_whois(struct obby_client_t *client, const char *nick);
+
+/**
+ * Rename a channel, keeping everyone in it and everything said in it. `reason` may be null.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_rename_channel(struct obby_client_t *client,
+                                const char *channel,
+                                const char *new_name,
+                                const char *reason);
+
+/**
+ * Make an invitation link. A null `channel` invites to the network; `description` may be null too.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_create_invite_link(struct obby_client_t *client,
+                                    const char *channel,
+                                    const char *description);
+
+/**
+ * Ask for the invitation links we have made.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_list_invite_links(struct obby_client_t *client);
+
+/**
+ * Withdraw an invitation link.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_delete_invite_link(struct obby_client_t *client, const char *share_id);
+
+/**
+ * Redeem an invitation code. Only before registering, which is the point of it.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_redeem_invite_code(struct obby_client_t *client, const char *code);
+
+/**
+ * Mint a bearer token for one of the network's services, such as its file host.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_generate_token(struct obby_client_t *client, const char *service);
 
 /**
  * Watch these nicks, so the server says when they come and go.

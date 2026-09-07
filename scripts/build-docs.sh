@@ -185,7 +185,14 @@ cat >"$out/index.html" <<HTML
       <div class="card">
         <span class="name">It runs where you run</span>
         <span class="what">No sockets, no timers, no threads, no async runtime. A browser tab, a
-          terminal, a Flutter app: same engine, your transport.</span>
+          terminal, a Flutter app: same engine, your transport. TypeScript and Dart also ship a
+          driver that owns the loop for you.</span>
+      </div>
+      <div class="card">
+        <span class="name">It speaks what the server speaks</span>
+        <span class="what">Every capability it negotiates has a handler: SASL, batches, history,
+          reactions, redaction, metadata, WHOIS, multiline, renames, and on an Obby server the bots,
+          invitations, voice signalling and end-to-end encryption.</span>
       </div>
     </div>
   </section>

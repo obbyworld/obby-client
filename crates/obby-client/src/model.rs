@@ -15,6 +15,12 @@ use obby_proto::{CaseFolded, Casemapping, Prefix};
 /// a history request.
 pub const DEFAULT_RETENTION: usize = 5000;
 
+/// How many `WHOIS` records the model holds at once.
+///
+/// A host looks someone up, reads the card and moves on, so a handful are live at any moment. The
+/// ceiling exists because the numerics that fill them name whatever nick the server chooses.
+const MAX_WHOIS_RECORDS: usize = 64;
+
 /// Where a message is ordered and how it is found again.
 ///
 /// Ordering is by the server's timestamp, with a monotonic sequence number breaking ties. A tie
@@ -357,6 +363,47 @@ pub struct Person {
     pub metadata: BTreeMap<String, String>,
 }
 
+/// What a `WHOIS` said about someone.
+///
+/// A reply is nine numerics that arrive one at a time, so they are collected here and reported once,
+/// when the closing `318` lands. A host that reacted to each numeric would redraw a profile card
+/// nine times and show eight incomplete ones.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+pub struct Whois {
+    /// Their nick, as the server spells it.
+    pub nick: String,
+    /// Their username, from `311`.
+    pub username: Option<String>,
+    /// Their host, from `311`.
+    pub host: Option<String>,
+    /// Their realname, from `311`.
+    pub realname: Option<String>,
+    /// The server they are on, from `312`.
+    pub server: Option<String>,
+    /// What that server calls itself, from `312`.
+    pub server_info: Option<String>,
+    /// How the server describes their operator privileges, from `313`, when they have any.
+    pub operator: Option<String>,
+    /// How long they have been idle, from `317`.
+    #[cfg_attr(feature = "ts", ts(type = "number | null"))]
+    pub idle_secs: Option<u64>,
+    /// When they connected, in milliseconds since the Unix epoch, from `317`.
+    #[cfg_attr(feature = "ts", ts(type = "number | null"))]
+    pub signon_ms: Option<u64>,
+    /// The channels they are in, keeping the prefix each one carries, from `319`.
+    pub channels: Vec<String>,
+    /// The account they are logged in as, from `330`.
+    pub account: Option<String>,
+    /// Where they are connecting from, as the server words it, from `338` or `378`.
+    pub actual_host: Option<String>,
+    /// True when the server said the connection is over TLS, from `671`.
+    pub secure: bool,
+    /// True once the closing `318` arrived and there is nothing more to come.
+    pub complete: bool,
+}
+
 /// A channel we are in.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -444,6 +491,7 @@ pub struct Model {
     channels: BTreeMap<CaseFolded, Channel>,
     conversations: BTreeMap<CaseFolded, Conversation>,
     people: BTreeMap<CaseFolded, Person>,
+    whois: BTreeMap<CaseFolded, Whois>,
     retention: usize,
     #[cfg_attr(feature = "ts", ts(type = "number"))]
     next_seq: u64,
@@ -463,6 +511,7 @@ impl Model {
             channels: BTreeMap::new(),
             conversations: BTreeMap::new(),
             people: BTreeMap::new(),
+            whois: BTreeMap::new(),
             retention: retention.max(1),
             next_seq: 0,
         }
@@ -564,6 +613,50 @@ impl Model {
         self.people.get_mut(key)
     }
 
+    /// What the last `WHOIS` said about someone.
+    pub fn whois(&self, key: &CaseFolded) -> Option<&Whois> {
+        self.whois.get(key)
+    }
+
+    /// The record a `WHOIS` reply is filling in.
+    ///
+    /// A record whose `318` already arrived is replaced rather than added to, because the numerics a
+    /// second reply leaves out are the ones that stopped being true: an operator who deopered sends
+    /// no `313` to say so.
+    pub fn whois_or_insert(&mut self, key: CaseFolded, nick: &str) -> &mut Whois {
+        // a server decides how many nicks it names in these numerics, so without a ceiling it
+        // decides how much memory we hold; the oldest complete record goes first
+        if self.whois.len() >= MAX_WHOIS_RECORDS && !self.whois.contains_key(&key) {
+            let stale = self
+                .whois
+                .iter()
+                .find(|(_, record)| record.complete)
+                .or_else(|| self.whois.iter().next())
+                .map(|(key, _)| key.clone());
+            if let Some(stale) = stale {
+                self.whois.remove(&stale);
+            }
+        }
+        let record = self.whois.entry(key).or_default();
+        if record.complete || record.nick.is_empty() {
+            *record = Whois {
+                nick: nick.to_string(),
+                ..Whois::default()
+            };
+        }
+        record
+    }
+
+    /// Every `WHOIS` record held, in folded nick order.
+    pub fn whois_records(&self) -> btree_map::Iter<'_, CaseFolded, Whois> {
+        self.whois.iter()
+    }
+
+    /// A `WHOIS` record we already hold, for filling in as its numerics arrive.
+    pub fn whois_mut(&mut self, key: &CaseFolded) -> Option<&mut Whois> {
+        self.whois.get_mut(key)
+    }
+
     /// A private conversation we already know, for changing what is in it.
     pub fn conversation_mut(&mut self, key: &CaseFolded) -> Option<&mut Conversation> {
         self.conversations.get_mut(key)
@@ -599,6 +692,19 @@ impl Model {
         }
     }
 
+    /// Move a channel to a new name, keeping everything in it. Returns whether we were in it.
+    ///
+    /// The map is keyed by the folded name, so a rename has to move the entry: editing the name in
+    /// place leaves every later lookup of the new name missing a channel we are still sitting in.
+    pub fn rename_channel(&mut self, casemapping: Casemapping, from: &str, to: &str) -> bool {
+        let Some(mut channel) = self.channels.remove(&casemapping.fold(from)) else {
+            return false;
+        };
+        channel.name = to.to_string();
+        self.channels.insert(casemapping.fold(to), channel);
+        true
+    }
+
     /// Forget anyone we no longer share a channel or a conversation with.
     ///
     /// Without this a long session accumulates one permanent record per nick it has ever seen,
@@ -612,6 +718,15 @@ impl Model {
         let me = self.me.nick.clone();
         self.people
             .retain(|key, person| keep.contains(key) || person.nick == me);
+        self.whois.retain(|key, _| keep.contains(key));
+    }
+
+    /// Forget every WHOIS record.
+    ///
+    /// A record describes someone as the server saw them on one connection. A reply cut short by a
+    /// dead link would otherwise leave fields behind for the next connection to merge into.
+    pub fn forget_whois(&mut self) {
+        self.whois.clear();
     }
 
     /// Remove someone from every channel, which is what a QUIT means. Returns where they were.

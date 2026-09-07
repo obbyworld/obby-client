@@ -83,6 +83,18 @@ pub enum Change {
         /// The key that changed.
         key: String,
     },
+    /// A `WHOIS` reply finished. The whole record is in the model, under the folded nick.
+    WhoisReceived {
+        /// Who it describes.
+        nick: String,
+    },
+    /// A channel changed its name and is the same channel, with the same people and messages.
+    ChannelRenamed {
+        /// What it was called.
+        from: String,
+        /// What it is called now.
+        to: String,
+    },
 }
 
 /// The token we tag our own WHOX requests with, so a reply to somebody else's is ignored.
@@ -181,6 +193,7 @@ pub(crate) fn apply(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
         "QUIT" => quit(ctx, line),
         "KICK" => kick(ctx, line),
         "NICK" => nick(ctx, line),
+        "RENAME" => rename_channel(ctx, line),
         "TOPIC" => topic(ctx, line),
         "MODE" => mode(ctx, line),
         "332" => topic_reply(ctx, line),
@@ -192,6 +205,10 @@ pub(crate) fn apply(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
         "METADATA" => metadata(ctx, line, 0),
         // 760 is WHOIS surfacing metadata inline, with the same shape as a 761 reply
         "760" | "761" | "766" => metadata(ctx, line, 1),
+        // one WHOIS reply, numeric by numeric, reported once when 318 closes it
+        "311" | "312" | "313" | "317" | "318" | "319" | "330" | "338" | "378" | "671" => {
+            whois(ctx, line, &command)
+        }
         "353" => names(ctx, line),
         "352" => who_reply(ctx, line),
         "354" => whox_reply(ctx, line),
@@ -399,6 +416,93 @@ fn nick(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
         from,
         to: to.to_string()
     }]
+}
+
+/// Apply `RENAME <old> <new> [:<reason>]`, from `draft/channel-rename`.
+fn rename_channel(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
+    let (Some(from), Some(to)) = (line.param(0), line.param(1)) else {
+        return Vec::new();
+    };
+    if !ctx.model.rename_channel(ctx.casemapping(), from, to) {
+        return Vec::new();
+    }
+    alloc::vec![Change::ChannelRenamed {
+        from: from.to_string(),
+        to: to.to_string(),
+    }]
+}
+
+/// Collect one numeric of a `WHOIS` reply, reporting the record only once `318` closes it.
+///
+/// Every numeric here is `<us> <them> ...`, so the second parameter names who the reply is about.
+/// The vendor `obby.world/whois` batch changes nothing about this: it wraps the same numerics, and
+/// the engine unwraps a batch before anything reaches here.
+/// Numerics we fold into a record and report only once the record is complete.
+///
+/// The host hears one `WhoisReceived` when `318` closes the record, so these lines are handled even
+/// though they change nothing a host can see yet, and must not reach it as unmodelled traffic.
+pub(crate) fn accumulates(command: &str) -> bool {
+    matches!(
+        command,
+        "311" | "312" | "313" | "317" | "319" | "330" | "338" | "378" | "671"
+    )
+}
+
+fn whois(ctx: &mut Context<'_>, line: &Line, command: &str) -> Vec<Change> {
+    let Some(nick) = line.param(1) else {
+        return Vec::new();
+    };
+    let key = ctx.fold(nick);
+    if command == "318" {
+        let Some(record) = ctx.model.whois_mut(&key) else {
+            return Vec::new();
+        };
+        record.complete = true;
+        return alloc::vec![Change::WhoisReceived {
+            nick: nick.to_string(),
+        }];
+    }
+
+    let text = line.trailing().map(ToString::to_string);
+    let record = ctx.model.whois_or_insert(key, nick);
+    match command {
+        "311" => {
+            record.username = line.param(2).map(ToString::to_string);
+            record.host = line.param(3).map(ToString::to_string);
+            record.realname = text;
+        }
+        "312" => {
+            record.server = line.param(2).map(ToString::to_string);
+            record.server_info = text;
+        }
+        "313" => record.operator = text,
+        "317" => {
+            record.idle_secs = line.param(2).and_then(|secs| secs.parse().ok());
+            record.signon_ms = line
+                .param(3)
+                .and_then(|at| at.parse::<u64>().ok())
+                .map(|seconds| seconds.saturating_mul(1000));
+        }
+        "319" => {
+            record.channels = line
+                .param(2)
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(ToString::to_string)
+                .collect();
+        }
+        "330" => record.account = line.param(2).map(ToString::to_string),
+        // 338 names the host in its own parameter; 378 only ever describes it in the trailing text
+        "338" | "378" => {
+            record.actual_host = match line.param(3) {
+                Some(_) => line.param(2).map(ToString::to_string),
+                None => text,
+            };
+        }
+        "671" => record.secure = true,
+        _ => {}
+    }
+    Vec::new()
 }
 
 fn topic(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
@@ -1021,6 +1125,111 @@ mod tests {
                 .conversation(&self.isupport.fold(nick))
                 .expect("the conversation should exist")
         }
+    }
+
+    impl Harness {
+        fn whois(&self, nick: &str) -> &crate::model::Whois {
+            self.model
+                .whois(&self.isupport.fold(nick))
+                .expect("the whois record should exist")
+        }
+    }
+
+    #[test]
+    fn a_whois_reply_is_reported_once_it_is_whole() {
+        let mut h = Harness::new();
+        for line in [
+            ":s 311 me bob ident host.example * :Bob Smith",
+            ":s 312 me bob irc.example.org :ObbyIRCd",
+            ":s 313 me bob :is an IRC Operator",
+            ":s 378 me bob :is connecting from *@h4ks.local 172.18.0.1",
+            ":s 671 me bob :is using a Secure Connection",
+            ":s 319 me bob :~@#obby +#other",
+            ":s 330 me bob bob_acct :is logged in as",
+            ":s 317 me bob 42 1787477054 :seconds idle, signon time",
+        ] {
+            assert!(
+                h.feed(line).is_empty(),
+                "a partial record would redraw the card once per numeric"
+            );
+        }
+
+        let changes = h.feed(":s 318 me bob :End of /WHOIS list.");
+        assert!(matches!(changes.first(), Some(Change::WhoisReceived { nick }) if nick == "bob"));
+
+        let whois = h.whois("BOB");
+        assert_eq!(whois.username.as_deref(), Some("ident"));
+        assert_eq!(whois.host.as_deref(), Some("host.example"));
+        assert_eq!(whois.realname.as_deref(), Some("Bob Smith"));
+        assert_eq!(whois.server.as_deref(), Some("irc.example.org"));
+        assert_eq!(whois.server_info.as_deref(), Some("ObbyIRCd"));
+        assert_eq!(whois.operator.as_deref(), Some("is an IRC Operator"));
+        assert_eq!(whois.account.as_deref(), Some("bob_acct"));
+        assert_eq!(whois.channels, ["~@#obby", "+#other"]);
+        assert_eq!(whois.idle_secs, Some(42));
+        assert_eq!(whois.signon_ms, Some(1_787_477_054_000));
+        assert!(whois.secure);
+        assert!(whois.complete);
+    }
+
+    #[test]
+    fn a_second_whois_replaces_the_first_rather_than_merging_into_it() {
+        let mut h = Harness::new();
+        h.feed(":s 313 me bob :is an IRC Operator");
+        h.feed(":s 671 me bob :is using a Secure Connection");
+        h.feed(":s 318 me bob :End of /WHOIS list.");
+
+        h.feed(":s 311 me bob ident host.example * :Bob Smith");
+        h.feed(":s 318 me bob :End of /WHOIS list.");
+        let whois = h.whois("bob");
+        assert_eq!(
+            whois.operator, None,
+            "a deopered user sends no 313 to say they lost it"
+        );
+        assert!(!whois.secure);
+    }
+
+    #[test]
+    fn the_end_of_a_whois_for_a_nick_with_no_record_reports_nothing() {
+        let mut h = Harness::new();
+        assert!(h.feed(":s 318 me nobody :End of /WHOIS list.").is_empty());
+    }
+
+    #[test]
+    fn a_338_names_the_host_in_its_own_parameter() {
+        let mut h = Harness::new();
+        h.feed(":s 338 me bob real.host.example :actually using host");
+        assert_eq!(
+            h.whois("bob").actual_host.as_deref(),
+            Some("real.host.example")
+        );
+    }
+
+    #[test]
+    fn a_rename_moves_the_channel_and_keeps_what_is_in_it() {
+        let mut h = Harness::new().joined("#obby");
+        h.feed(":bob!u@h JOIN #obby");
+        h.feed(":bob!u@h PRIVMSG #obby :hello");
+
+        let changes = h.feed(":s RENAME #obby #obby-world :tidying up");
+        assert!(
+            matches!(changes.first(), Some(Change::ChannelRenamed { from, to }) if from == "#obby" && to == "#obby-world")
+        );
+        assert!(
+            h.model.channel(&h.isupport.fold("#obby")).is_none(),
+            "the old name must not still resolve"
+        );
+        let renamed = h.channel("#obby-world");
+        assert_eq!(renamed.name, "#obby-world");
+        assert!(renamed.members.contains_key(&h.isupport.fold("bob")));
+        assert_eq!(renamed.log.last().map(|m| m.text.as_str()), Some("hello"));
+    }
+
+    #[test]
+    fn a_rename_of_a_channel_we_are_not_in_changes_nothing() {
+        let mut h = Harness::new();
+        assert!(h.feed(":s RENAME #theirs #theirs-too").is_empty());
+        assert_eq!(h.model.channels().count(), 0);
     }
 
     #[test]

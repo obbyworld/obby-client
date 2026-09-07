@@ -16,7 +16,7 @@ use std::net::TcpStream;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use obby_client::{Client, Command, Config, Event, Now, Phase};
+use obby_client::{Client, Config, Event, Now, Phase};
 
 const HOST: &str = "irc.h4ks.com";
 const PORT: u16 = 6697;
@@ -79,6 +79,18 @@ fn now(started: Instant) -> Now {
     }
 }
 
+/// What the real server said about us, or nothing when the collector never filled a record.
+///
+/// A 311 is the one numeric every server sends, so an absent host means nothing collected it.
+fn describe_whois(client: &Client, nick: &str) -> Option<String> {
+    let whois = client.model().whois(&client.isupport().fold(nick))?;
+    whois.host.as_ref()?;
+    Some(format!(
+        "whois: host {:?}, server {:?}, secure {}, channels {:?}",
+        whois.host, whois.server, whois.secure, whois.channels
+    ))
+}
+
 #[test]
 #[ignore = "needs the network"]
 fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::error::Error>> {
@@ -93,6 +105,7 @@ fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::erro
     let started = Instant::now();
     let mut joined = false;
     let mut said = false;
+    let mut whois_done = false;
     let mut caps = Vec::new();
 
     while started.elapsed() < DEADLINE {
@@ -111,23 +124,29 @@ fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::erro
                 Event::CapabilitiesAcknowledged { names } => caps.extend(names),
                 Event::Registered { nick } => {
                     println!("registered as {nick}");
-                    client.command(Command::Join {
-                        channel: CHANNEL.to_string(),
-                        key: None,
-                    });
+                    client.join(CHANNEL, None);
                 }
                 Event::ModelChanged {
                     change: obby_client::Change::ChannelJoined { channel },
                 } if channel == CHANNEL => {
                     joined = true;
-                    client.command(Command::SendMessage {
-                        target: CHANNEL.to_string(),
-                        text: "obby-client smoke test".to_string(),
-                    });
+                    client.send_message(CHANNEL, "obby-client smoke test");
                 }
                 Event::ModelChanged {
                     change: obby_client::Change::MessageAdded { target, .. },
-                } if target == CHANNEL => said = true,
+                } if target == CHANNEL && !said => {
+                    said = true;
+                    // the vendor WHOIS batch and the token mint only exist on a real ObbyIRCd, so
+                    // this is the only place either handler meets the wire it was written against
+                    client.whois(nick.clone());
+                    client.generate_token("FILEHOST");
+                }
+                Event::ModelChanged {
+                    change: obby_client::Change::WhoisReceived { .. },
+                } => whois_done = true,
+                Event::AuthToken {
+                    service, endpoint, ..
+                } => println!("minted a {service} token for {endpoint}"),
                 Event::ServerReply { severity, code, .. } => {
                     println!("server reply: {severity:?} {code}");
                 }
@@ -135,7 +154,7 @@ fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::erro
             }
         }
 
-        if joined && said {
+        if joined && said && whois_done {
             break;
         }
         std::thread::sleep(Duration::from_millis(20));
@@ -156,6 +175,10 @@ fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::erro
     );
     assert!(joined, "never joined {CHANNEL}");
     assert!(said, "our own message never came back into the model");
+    assert!(whois_done, "the WHOIS reply never finished");
+
+    let whois = describe_whois(&client, &nick).expect("the WHOIS collector filled a record");
+    println!("{whois}");
     assert_eq!(
         client.dropped_lines(),
         0,
@@ -173,9 +196,7 @@ fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::erro
         channel.log.len()
     );
 
-    client.command(Command::Quit {
-        reason: Some("smoke test done".to_string()),
-    });
+    client.quit(Some("smoke test done".to_string()));
     let mut goodbye = Vec::new();
     while let Some(bytes) = client.poll_transmit() {
         goodbye.extend_from_slice(&bytes);

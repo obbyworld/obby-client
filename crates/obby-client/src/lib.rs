@@ -31,6 +31,8 @@ mod command;
 mod e2ee;
 #[cfg(feature = "obby")]
 mod extensions;
+#[cfg(feature = "obby")]
+mod json;
 mod label;
 mod model;
 mod monitor;
@@ -57,7 +59,7 @@ pub use extensions::{
 };
 pub use model::{
     Channel, ChatMessage, Conversation, DEFAULT_RETENTION, LocalUser, Membership, MessageKey,
-    MessageKind, MessageLog, Model, Person,
+    MessageKind, MessageLog, Model, Person, Whois,
 };
 pub use monitor::WatchList;
 pub use sasl::{Credentials, SaslFailure};

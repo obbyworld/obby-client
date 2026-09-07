@@ -354,7 +354,43 @@ value: string | null, } | { "type": "subscribe_metadata",
 /**
  * The keys to watch.
  */
-keys: Array<string>, } | { "type": "watch_nicks", 
+keys: Array<string>, } | { "type": "whois", 
+/**
+ * Who to ask about.
+ */
+nick: string, } | { "type": "rename_channel", 
+/**
+ * The channel as it is called now.
+ */
+channel: string, 
+/**
+ * What to call it.
+ */
+new_name: string, 
+/**
+ * Why, shown to the others in it.
+ */
+reason: string | null, } | { "type": "create_invite_link", 
+/**
+ * The channel it joins, or nothing to invite to the network.
+ */
+channel: string | null, 
+/**
+ * What it is for.
+ */
+description: string | null, } | { "type": "list_invite_links" } | { "type": "delete_invite_link", 
+/**
+ * Which one, from [`Command::ListInviteLinks`].
+ */
+share_id: string, } | { "type": "redeem_invite_code", 
+/**
+ * The code, which is the share id of the link that carried it.
+ */
+code: string, } | { "type": "generate_token", 
+/**
+ * Which service the token is for, such as `FILEHOST`.
+ */
+service: string, } | { "type": "watch_nicks", 
 /**
  * The nicks to watch.
  */
@@ -627,7 +663,7 @@ export type Model = {
 /**
  * Who we are.
  */
-me: LocalUser, channels: { [key in CaseFolded]?: Channel }, conversations: { [key in CaseFolded]?: Conversation }, people: { [key in CaseFolded]?: Person }, retention: number, next_seq: number, };
+me: LocalUser, channels: { [key in CaseFolded]?: Channel }, conversations: { [key in CaseFolded]?: Conversation }, people: { [key in CaseFolded]?: Person }, whois: { [key in CaseFolded]?: Whois }, retention: number, next_seq: number, };
 
 /**
  * What changed, for a host that wants to react without diffing the whole model.
@@ -696,7 +732,19 @@ target: string,
 /**
  * The key that changed.
  */
-key: string, };
+key: string, } | { "type": "whois_received", 
+/**
+ * Who it describes.
+ */
+nick: string, } | { "type": "channel_renamed", 
+/**
+ * What it was called.
+ */
+from: string, 
+/**
+ * What it is called now.
+ */
+to: string, };
 
 /**
  * Something the host needs to know about.
@@ -749,7 +797,23 @@ after_ms: number, } | { "type": "reconnect_abandoned" } | { "type": "command_tim
 /**
  * The command that went unanswered.
  */
-command: string, } | { "type": "allowed_commands_changed" } | { "type": "voice", 
+command: string, } | { "type": "allowed_commands_changed" } | { "type": "bots_changed", 
+/**
+ * The bot the server told us about.
+ */
+nick: string, } | { "type": "auth_token", 
+/**
+ * The service it is for, as the server spells it.
+ */
+service: string, 
+/**
+ * Where to present it.
+ */
+endpoint: string, 
+/**
+ * The token itself.
+ */
+token: string, } | { "type": "voice", 
 /**
  * The channel the room belongs to.
  */
@@ -1193,3 +1257,68 @@ member: string, };
  * Who we are watching, and whether each is online.
  */
 export type WatchList = { watching: Array<CaseFolded>, online: Array<CaseFolded>, };
+
+/**
+ * What a `WHOIS` said about someone.
+ *
+ * A reply is nine numerics that arrive one at a time, so they are collected here and reported once,
+ * when the closing `318` lands. A host that reacted to each numeric would redraw a profile card
+ * nine times and show eight incomplete ones.
+ */
+export type Whois = { 
+/**
+ * Their nick, as the server spells it.
+ */
+nick: string, 
+/**
+ * Their username, from `311`.
+ */
+username: string | null, 
+/**
+ * Their host, from `311`.
+ */
+host: string | null, 
+/**
+ * Their realname, from `311`.
+ */
+realname: string | null, 
+/**
+ * The server they are on, from `312`.
+ */
+server: string | null, 
+/**
+ * What that server calls itself, from `312`.
+ */
+server_info: string | null, 
+/**
+ * How the server describes their operator privileges, from `313`, when they have any.
+ */
+operator: string | null, 
+/**
+ * How long they have been idle, from `317`.
+ */
+idle_secs: number | null, 
+/**
+ * When they connected, in milliseconds since the Unix epoch, from `317`.
+ */
+signon_ms: number | null, 
+/**
+ * The channels they are in, keeping the prefix each one carries, from `319`.
+ */
+channels: Array<string>, 
+/**
+ * The account they are logged in as, from `330`.
+ */
+account: string | null, 
+/**
+ * Where they are connecting from, as the server words it, from `338` or `378`.
+ */
+actual_host: string | null, 
+/**
+ * True when the server said the connection is over TLS, from `671`.
+ */
+secure: boolean, 
+/**
+ * True once the closing `318` arrived and there is nothing more to come.
+ */
+complete: boolean, };

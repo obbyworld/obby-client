@@ -95,6 +95,25 @@ wasm: ## browser and bun package
 	wasm-pack build bindings/obby-wasm --target web --out-dir pkg
 	# wasm-pack names the package after the crate, and npm shows the name a consumer types
 	cd bindings/obby-wasm/pkg && npm pkg set name=obby-client
+	# driver.ts is typechecked against ./pkg/obby_wasm.js in place (see ts-check); the emitted
+	# driver.js ends up living beside obby_wasm.js instead, so the import path has to move with it
+	npx --yes -p typescript@5 tsc --strict --target es2022 --lib esnext,dom \
+	  --module es2022 --moduleResolution bundler --declaration \
+	  --outDir bindings/obby-wasm bindings/obby-wasm/driver.ts
+	sed 's#\./pkg/obby_wasm\.js#./obby_wasm.js#' bindings/obby-wasm/driver.js > bindings/obby-wasm/pkg/driver.js
+	sed 's#\./pkg/obby_wasm\.js#./obby_wasm.js#' bindings/obby-wasm/driver.d.ts > bindings/obby-wasm/pkg/driver.d.ts
+	rm bindings/obby-wasm/driver.js bindings/obby-wasm/driver.d.ts
+	node -e '\
+	  const fs = require("fs"); \
+	  const path = "bindings/obby-wasm/pkg/package.json"; \
+	  const pkg = JSON.parse(fs.readFileSync(path, "utf8")); \
+	  for (const f of ["driver.js", "driver.d.ts"]) if (!pkg.files.includes(f)) pkg.files.push(f); \
+	  pkg.exports = { \
+	    ".": { types: "./obby_wasm.d.ts", default: "./obby_wasm.js" }, \
+	    "./driver": { types: "./driver.d.ts", default: "./driver.js" } \
+	  }; \
+	  fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n"); \
+	'
 	@if command -v wasm-opt >/dev/null; then \
 	  wasm-opt -O --enable-bulk-memory --enable-nontrapping-float-to-int \
 	    bindings/obby-wasm/pkg/obby_wasm_bg.wasm -o bindings/obby-wasm/pkg/obby_wasm_bg.wasm; \
@@ -110,10 +129,12 @@ c-smoke: ## compile and run the C program that drives the whole ABI
 	  $(FFI_SYSTEM_LIBS) -o target/obby-c-smoke
 	./target/obby-c-smoke
 
-ts-check: ## typecheck a consumer, then run one against the built module
+ts-check: ## typecheck a consumer and the driver, then run each against the built module
 	npx --yes -p typescript@5 tsc --strict --noEmit --target es2022 --lib esnext,dom \
-	  --module es2022 --moduleResolution bundler bindings/obby-wasm/tests/typecheck.ts
+	  --module es2022 --moduleResolution bundler \
+	  bindings/obby-wasm/tests/typecheck.ts bindings/obby-wasm/driver.ts
 	node bindings/obby-wasm/tests/runtime.mjs
+	node bindings/obby-wasm/tests/driver.mjs
 
 site: ## build the documentation site into target/site
 	scripts/build-docs.sh
