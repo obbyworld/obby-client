@@ -114,9 +114,10 @@ changed_files=("$cargo_toml" "Cargo.lock")
 
 # a hand-authored package.json under bindings/ would have its own version field; none exists
 # today (obby-wasm's pkg/package.json is generated at build time from Cargo.toml), but bump it
-# too if one shows up
+# too if one shows up. Only tracked files count, so a generated one in a build directory is left
+# alone rather than bumped and then refused by `git add`
 while IFS= read -r -d '' pkg_json; do
-  if grep -q '"version"' "$pkg_json"; then
+  if git ls-files --error-unmatch "$pkg_json" >/dev/null 2>&1 && grep -q '"version"' "$pkg_json"; then
     sed -E "s/(\"version\"[[:space:]]*:[[:space:]]*\")[^\"]*(\")/\1${new_version}\2/" "$pkg_json" >"${pkg_json}.new"
     mv "${pkg_json}.new" "$pkg_json"
     changed_files+=("$pkg_json")
@@ -127,7 +128,7 @@ done < <(find bindings -name 'package.json' -print0)
 # Cargo.toml via maturin, so there is nothing to bump there; only a static `version = "..."`
 # field needs touching, in case one is ever added
 while IFS= read -r -d '' pyproject; do
-  if grep -qE '^version[[:space:]]*=' "$pyproject"; then
+  if git ls-files --error-unmatch "$pyproject" >/dev/null 2>&1 && grep -qE '^version[[:space:]]*=' "$pyproject"; then
     sed -E "s/^version[[:space:]]*=[[:space:]]*\"[^\"]*\"/version = \"${new_version}\"/" "$pyproject" >"${pyproject}.new"
     mv "${pyproject}.new" "$pyproject"
     changed_files+=("$pyproject")
@@ -137,7 +138,7 @@ done < <(find bindings -name 'pyproject.toml' -print0)
 # the Dart package has a hand-written version, since pub.dev has no equivalent of maturin
 # reading it back out of Cargo.toml
 while IFS= read -r -d '' pubspec; do
-  if grep -qE '^version:[[:space:]]' "$pubspec"; then
+  if git ls-files --error-unmatch "$pubspec" >/dev/null 2>&1 && grep -qE '^version:[[:space:]]' "$pubspec"; then
     sed -E "s/^version:[[:space:]]*.*/version: ${new_version}/" "$pubspec" >"${pubspec}.new"
     mv "${pubspec}.new" "$pubspec"
     changed_files+=("$pubspec")
