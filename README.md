@@ -152,8 +152,8 @@ conversation, and the messages, capped per target by the retention you configure
 <details>
 <summary><b>The same loop in TypeScript</b></summary>
 
-```js
-import init, { ObbyClient } from "obby-client";
+```ts
+import init, { ObbyClient, type Event } from "obby-client";
 
 await init();
 
@@ -175,6 +175,20 @@ client.command({ command: "join", channel: "#obby", key: null });
 
 Events drain as a batch, because one call across the WebAssembly boundary costs the same for one
 event as for a hundred.
+
+The package is strictly typed, and nothing in it is `any`. `Command`, `Event`, `Model`, `Config` and
+every shape they reach are generated from the Rust types, so TypeScript rejects a misspelled field
+before the code runs, and a change to the engine shows up as a type error rather than as silence:
+
+```ts
+for (const event of client.pollEvents()) {
+  if (event.type === "registered") {
+    // TypeScript knows this branch has `nick`, and that a join needs `channel` and `key`
+    console.log(`registered as ${event.nick}`);
+    client.command({ command: "join", channel: "#obby", key: null });
+  }
+}
+```
 
 </details>
 

@@ -10,6 +10,7 @@ use core::fmt::Write as _;
 /// `value: None`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Tag {
     /// The tag name, including a leading `+` on a client-only tag and any vendor prefix.
     pub key: String,
@@ -46,6 +47,7 @@ impl Tag {
 /// because a server may legally send the same key twice.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Tags(Vec<Tag>);
 
 impl Tags {

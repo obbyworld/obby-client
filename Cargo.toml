@@ -31,6 +31,9 @@ pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
 sha2 = { version = "0.10", default-features = false }
 zeroize = { version = "1", default-features = false }
 insta = "1.47"
+# generates the TypeScript definitions from the Rust types, so the two cannot drift. Behind the
+# `ts` feature, which nothing but the generator turns on
+ts-rs = { version = "10", features = ["serde-json-impl"] }
 # a dev-only TLS stack, so the live smoke test can reach a real server. Never a dependency of the
 # published crates, whose whole point is that they open no sockets
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

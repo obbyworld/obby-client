@@ -386,6 +386,7 @@ fn field_u32(value: &Json, key: &str) -> Option<u32> {
 /// The two states an intent frame like `mic` or `hand` toggles between.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub enum OnOff {
     /// The feature is enabled.
     On,
@@ -413,6 +414,8 @@ impl OnOff {
 /// Whether a room participant may publish audio and video, or only receive it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "VoiceRole"))]
 pub enum Role {
     /// May publish: everyone in a `^` room, and the streamer plus their promotions in a `$` room.
     Publisher,
@@ -440,6 +443,8 @@ impl Role {
 /// Who may publish in a voice room, decided by the channel's sigil.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "VoiceRoomKind"))]
 pub enum RoomKind {
     /// A `^` channel: every member publishes their own microphone for free.
     Publish,
@@ -476,6 +481,8 @@ impl RoomKind {
 /// Which per-participant toggle a `presence` notification reports, for its toggle sub-shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "VoiceToggle"))]
 pub enum ToggleKind {
     /// Microphone.
     Mic,
@@ -524,6 +531,8 @@ impl ToggleKind {
 /// (`Speaking`/`Silent`/`DeafOn`/`DeafOff`, which carries no `kind` at all).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "VoicePresence"))]
 pub enum PresenceState {
     /// `member` joined the room. Carries a `role` only in a `$` room.
     Joined,
@@ -583,6 +592,8 @@ impl PresenceState {
 /// purpose; a real server may send more fields, which this simply ignores on decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "VoiceTrackHint"))]
 pub struct TrackHint {
     /// The SDP media line identifier this hint names.
     pub mid: String,
@@ -615,6 +626,7 @@ impl TrackHint {
 /// fresh `joined`) before that happens, since nothing here does it automatically.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct TurnCredentials {
     /// The TURN/STUN server URLs to try, in order.
     pub urls: Vec<String>,
@@ -650,6 +662,7 @@ impl TurnCredentials {
 /// The chunk-correlation fields riding alongside a split `sdp` value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct ChunkMeta {
     /// The id every chunk of one split frame shares.
     pub id: String,
@@ -689,6 +702,8 @@ fn chunk_meta_fields(chunk: &ChunkMeta) -> Vec<(String, Json)> {
 /// collapsed into one type as the published table's prose implies.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "VoiceSignal"))]
 #[cfg_attr(feature = "serde", serde(tag = "type"))]
 #[non_exhaustive]
 pub enum Signal {
@@ -1165,6 +1180,7 @@ pub const DEFAULT_CHUNK_BUDGET: usize = 8191;
 /// One numbered slice of a split `offer`/`answer` frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct SdpChunk {
     /// This slice's correlation fields.
     pub chunk: ChunkMeta,
@@ -1237,6 +1253,7 @@ pub const DEFAULT_MAX_CONCURRENT_REASSEMBLIES: usize = 16;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 struct PartialSdp {
     total: u32,
     parts: BTreeMap<u32, String>,
@@ -1245,6 +1262,7 @@ struct PartialSdp {
 /// A bounded buffer that reassembles `offer`/`answer` frames split across chunks.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct SdpReassembler {
     partials: BTreeMap<String, PartialSdp>,
     max_chunks: usize,
@@ -1330,6 +1348,8 @@ impl Default for SdpReassembler {
 /// enums keeps it to one type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "VoiceParticipant"))]
 pub struct Participant {
     /// Their nick as the server spells it, since the map that holds them is keyed by a fold that
     /// throws that spelling away.
@@ -1380,6 +1400,8 @@ impl Default for Participant {
 /// mic, video, speaking, deaf, screen and hand state and role.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "VoiceRoom"))]
 pub struct Room {
     /// The channel this room's signalling is scoped to.
     pub channel: String,

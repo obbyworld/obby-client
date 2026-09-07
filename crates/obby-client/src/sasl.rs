@@ -15,6 +15,7 @@ const CHUNK: usize = 400;
 /// What to authenticate with.
 #[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[non_exhaustive]
 pub enum Credentials {
     /// A username and password in the clear, so only over TLS.
@@ -138,6 +139,7 @@ pub(crate) fn offers(advertised: Option<&str>, mechanism: &str) -> bool {
 /// Why authentication ended without succeeding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[non_exhaustive]
 pub enum SaslFailure {
     /// 904: the credentials were rejected.

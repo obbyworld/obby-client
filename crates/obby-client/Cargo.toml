@@ -16,6 +16,8 @@ keywords.workspace = true
 default = ["std", "serde", "obby", "voice", "e2ee"]
 std = ["obby-proto/std", "serde?/std", "base64/std"]
 serde = ["dep:serde", "obby-proto/serde"]
+# TypeScript definitions for every type that crosses a binding
+ts = ["dep:ts-rs", "serde", "std", "obby-proto/ts"]
 # the Obby vendored extensions: cmdslist, channel-bots, link-preview, named modes, filehost
 obby = []
 # voice signaling and room state, never the media plane
@@ -41,6 +43,7 @@ hkdf = { workspace = true, optional = true }
 sha2.workspace = true
 zeroize = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
+ts-rs = { workspace = true, optional = true }
 
 [dev-dependencies]
 insta.workspace = true

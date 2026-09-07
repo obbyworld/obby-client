@@ -17,6 +17,7 @@ use obby_proto::Message as Line;
 /// server refuses these tags from any sender but itself, so a peer cannot forge one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct LinkPreview {
     /// The page title. Always present when a preview exists at all.
     pub title: String,
@@ -59,6 +60,8 @@ impl LinkPreview {
 /// batch carries additions and removals together, so both are applied at once.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "AllowedCommands"))]
 pub struct Commands {
     available: alloc::collections::BTreeSet<String>,
 }
@@ -111,6 +114,7 @@ impl Commands {
 /// An invitation link to the network or to one channel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Invitation {
     /// The identifier used to delete it.
     pub share_id: String,
@@ -173,6 +177,7 @@ fn channel_or_network(value: &str) -> Option<String> {
 /// What the server knows about a bot in a channel.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Bot {
     /// The bot's nick.
     pub nick: String,
@@ -190,6 +195,7 @@ pub struct Bot {
 /// One command a bot offers.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct BotCommand {
     /// What to type, without its leading slash.
     pub name: String,
@@ -208,6 +214,7 @@ pub const PRIVILEGED_COMMANDS: &[&str] = &[
 /// The bots we know about, keyed by their folded nick.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Bots {
     known: BTreeMap<String, Bot>,
 }

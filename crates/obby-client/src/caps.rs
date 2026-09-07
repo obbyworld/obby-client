@@ -79,6 +79,7 @@ pub const WANTED_CAPS: &[&str] = &[
 /// One capability the server advertised, with the value it carried if any.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Capability {
     /// The capability name, without any `=value` suffix.
     pub name: String,
@@ -89,6 +90,7 @@ pub struct Capability {
 /// What the server offers and what we hold.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Caps {
     available: BTreeMap<String, Option<String>>,
     acknowledged: BTreeMap<String, Option<String>>,

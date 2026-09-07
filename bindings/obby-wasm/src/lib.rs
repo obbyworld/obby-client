@@ -7,7 +7,34 @@
 
 use obby_client::{Client, Command, Config, Event, Now};
 use wasm_bindgen::JsValue;
+use wasm_bindgen::JsCast as _;
 use wasm_bindgen::prelude::wasm_bindgen;
+
+/// The TypeScript definitions of everything that crosses this boundary.
+///
+/// Generated from the Rust types by `make ts-types`, so a shape can never drift from the engine
+/// that produces it. `wasm-bindgen` copies this verbatim into the package's `.d.ts`.
+#[wasm_bindgen(typescript_custom_section)]
+const TYPES: &str = include_str!("types.d.ts");
+
+#[wasm_bindgen]
+unsafe extern "C" {
+    /// A [`Config`], as TypeScript sees it.
+    #[wasm_bindgen(typescript_type = "Config")]
+    pub type ConfigValue;
+
+    /// A [`Command`], as TypeScript sees it.
+    #[wasm_bindgen(typescript_type = "Command")]
+    pub type CommandValue;
+
+    /// Everything drained by [`ObbyClient::poll_events`], as TypeScript sees it.
+    #[wasm_bindgen(typescript_type = "Event[]")]
+    pub type EventsValue;
+
+    /// A [`obby_client::Model`], as TypeScript sees it.
+    #[wasm_bindgen(typescript_type = "Model")]
+    pub type ModelValue;
+}
 
 /// One connection, wrapped for JavaScript.
 ///
@@ -26,8 +53,8 @@ impl ObbyClient {
     /// `config` is a JS object with the same shape as [`Config`]. Only `nick` is required; every
     /// other field has a default.
     #[wasm_bindgen(constructor)]
-    pub fn new(config: JsValue) -> Result<ObbyClient, JsValue> {
-        let config: Config = serde_wasm_bindgen::from_value(config)?;
+    pub fn new(config: ConfigValue) -> Result<ObbyClient, JsValue> {
+        let config: Config = serde_wasm_bindgen::from_value(config.into())?;
         Ok(Self {
             inner: Client::new(config),
         })
@@ -62,8 +89,8 @@ impl ObbyClient {
 
     /// Do something on this connection. `command` is a JS object with the same shape as
     /// [`Command`].
-    pub fn command(&mut self, command: JsValue) -> Result<(), JsValue> {
-        let command: Command = serde_wasm_bindgen::from_value(command)?;
+    pub fn command(&mut self, command: CommandValue) -> Result<(), JsValue> {
+        let command: Command = serde_wasm_bindgen::from_value(command.into())?;
         self.apply(command);
         Ok(())
     }
@@ -91,14 +118,14 @@ impl ObbyClient {
     /// whether it carries one event or a hundred, so paying that cost once per drain rather than
     /// once per event is what actually saves work.
     #[wasm_bindgen(js_name = pollEvents)]
-    pub fn poll_events(&mut self) -> Result<JsValue, JsValue> {
-        Ok(serde_wasm_bindgen::to_value(&self.drain_events())?)
+    pub fn poll_events(&mut self) -> Result<EventsValue, JsValue> {
+        Ok(serde_wasm_bindgen::to_value(&self.drain_events())?.unchecked_into())
     }
 
     /// Everything the connection knows, as a JS value: channels, members, conversations and
     /// messages. For a host that only wants the model, not a diff of what changed.
-    pub fn model(&self) -> Result<JsValue, JsValue> {
-        Ok(serde_wasm_bindgen::to_value(self.inner.model())?)
+    pub fn model(&self) -> Result<ModelValue, JsValue> {
+        Ok(serde_wasm_bindgen::to_value(self.inner.model())?.unchecked_into())
     }
 }
 

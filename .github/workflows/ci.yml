@@ -92,8 +92,14 @@ jobs:
       # the release publishes what wasm-pack produces, so a cargo check alone would let a broken
       # package reach npm
       - run: make wasm
-      # the C header is generated, so a drifted one means the ABI changed without anyone saying so
+      # the C header and the TypeScript definitions are generated, so a drifted one means an ABI
+      # changed without anyone saying so
       - run: make header && git diff --exit-code bindings/obby-ffi/include
+      - run: make ts-types && git diff --exit-code bindings/obby-wasm/src/types.d.ts
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - run: make ts-check
       - run: make c-smoke
       - run: make dart
 

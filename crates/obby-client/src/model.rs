@@ -22,6 +22,8 @@ pub const DEFAULT_RETENTION: usize = 5000;
 /// because of an incidental property of the sort it uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "MessageOrder"))]
 pub struct MessageKey {
     /// Milliseconds since the epoch, from `server-time` when the server sent one.
     pub time_ms: u64,
@@ -32,6 +34,7 @@ pub struct MessageKey {
 /// What kind of thing happened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum MessageKind {
@@ -71,6 +74,8 @@ pub enum MessageKind {
 /// One message, as the model holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "ChatMessage"))]
 pub struct Message {
     /// Where it sits in the log.
     pub key: MessageKey,
@@ -127,8 +132,11 @@ impl Message {
 /// The messages of one channel or conversation, ordered and bounded.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "MessageLog"))]
 pub struct Log {
     #[cfg_attr(feature = "serde", serde(with = "messages_as_list"))]
+    #[cfg_attr(feature = "ts", ts(as = "Vec<Message>"))]
     messages: BTreeMap<MessageKey, Message>,
     by_msgid: BTreeMap<String, MessageKey>,
     retention: usize,
@@ -283,6 +291,7 @@ impl<'a> IntoIterator for &'a Log {
 /// channel they are in and drifting apart.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Membership {
     /// The prefix characters they hold here, highest rank first.
     pub prefixes: String,
@@ -314,6 +323,7 @@ impl Membership {
 /// Someone we know about, held once however many channels we share.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Person {
     /// Their nick, as they spell it.
     pub nick: String,
@@ -341,6 +351,7 @@ pub struct Person {
 /// A channel we are in.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Channel {
     /// The name as the server spells it.
     pub name: String,
@@ -378,6 +389,8 @@ pub struct Channel {
 /// A private conversation with one other person.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "Conversation"))]
 pub struct Query {
     /// Their nick, as they spell it.
     pub nick: String,
@@ -394,6 +407,7 @@ pub struct Query {
 /// Who we are on this connection.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Me {
     /// Our current nick.
     pub nick: String,
@@ -413,6 +427,7 @@ pub struct Me {
 /// Everything the connection knows.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Model {
     /// Who we are.
     pub me: Me,

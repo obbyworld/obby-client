@@ -16,9 +16,12 @@ keywords.workspace = true
 default = ["std"]
 std = ["thiserror/std", "serde?/std"]
 serde = ["dep:serde"]
+# TypeScript definitions for every type that crosses a binding
+ts = ["dep:ts-rs", "serde", "std"]
 
 [dependencies]
 serde = { workspace = true, optional = true }
+ts-rs = { workspace = true, optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]

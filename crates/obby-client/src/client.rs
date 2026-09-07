@@ -20,6 +20,7 @@ use crate::timer::{
 /// How far the connection has got.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub enum Phase {
     /// No transport yet. Nothing has been written.
     Disconnected,
@@ -37,6 +38,7 @@ pub enum Phase {
 /// actually cares about. An empty username or realname is filled in from the nick.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "serde", serde(default))]
 pub struct Config {
     /// The nick to register with.
@@ -87,6 +89,7 @@ impl Config {
 /// engine is bound into.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Event {
@@ -1261,6 +1264,7 @@ impl Client {
 /// How serious a `standard-replies` message is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum Severity {
     /// The command did not happen.

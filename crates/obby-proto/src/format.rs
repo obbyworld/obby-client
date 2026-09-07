@@ -28,6 +28,7 @@ const CTCP_DELIM: char = '\u{01}';
 /// and a consumer rendering a [`Style`] does not care which byte put it there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub enum Colour {
     /// One of mIRC's 99 numbered colours (`\x03`), `0` through `99`.
     Numbered(u8),
@@ -41,6 +42,7 @@ pub enum Colour {
 /// separate `bool` fields that would trip `clippy::struct_excessive_bools`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Emphasis(u8);
 
 impl Emphasis {
@@ -90,6 +92,7 @@ impl Emphasis {
 /// The formatting active over a run of text.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Style {
     /// The active bold/italic/underline/strikethrough/monospace/reverse toggles.
     pub emphasis: Emphasis,
@@ -102,6 +105,7 @@ pub struct Style {
 /// A run of text plus the [`Style`] active over it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Span {
     /// The text, with every control code removed.
     pub text: String,
@@ -112,6 +116,7 @@ pub struct Span {
 /// A CTCP request or reply extracted from a message body, such as `ACTION waves`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Ctcp {
     /// The command word, such as `ACTION` or `VERSION`.
     pub command: String,

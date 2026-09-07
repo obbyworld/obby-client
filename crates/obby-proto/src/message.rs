@@ -21,6 +21,7 @@ pub enum ParseError {
 /// send only the nick.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Source {
     /// The nick, or the server name when there is no `!` or `@`.
     pub name: String,
@@ -87,6 +88,8 @@ impl fmt::Display for Source {
 /// a Rust lifetime, so the copy has to happen somewhere and here is the only place it happens once.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "RawMessage"))]
 pub struct Message {
     /// The tag section, empty when the line carried no `@`.
     pub tags: Tags,

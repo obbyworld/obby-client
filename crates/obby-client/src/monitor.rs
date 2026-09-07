@@ -12,6 +12,7 @@ use obby_proto::CaseFolded;
 /// Who we are watching, and whether each is online.
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Monitor {
     watching: BTreeSet<CaseFolded>,
     online: BTreeSet<CaseFolded>,

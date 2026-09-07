@@ -12,6 +12,7 @@ use crate::isupport::Isupport;
 /// One mode letter changing, with the argument it consumed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct ModeChange {
     /// True for `+`, false for `-`.
     pub set: bool,

@@ -8,8 +8,11 @@ One build serves both the browser and Bun.
 npm install obby-client
 ```
 
-```js
-import init, { ObbyClient } from "obby-client";
+Every shape is typed: `Command`, `Event`, `Model` and the rest are generated from the Rust and
+shipped in the package, so a mistyped field is a compile error rather than a runtime surprise.
+
+```ts
+import init, { ObbyClient, type Command, type Event } from "obby-client";
 
 await init();
 const client = new ObbyClient({ nick: "mynick" });

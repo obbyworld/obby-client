@@ -11,6 +11,7 @@ use core::fmt;
 /// How a server folds case, from the `CASEMAPPING` ISUPPORT token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub enum Casemapping {
     /// `A-Z` only.
     Ascii,
@@ -74,6 +75,7 @@ impl Casemapping {
 /// came from the same connection, which is the only place they are ever used together.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[derive(Default)]
 pub struct CaseFolded(String);
 

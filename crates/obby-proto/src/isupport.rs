@@ -135,6 +135,7 @@ pub struct Isupport {
 /// One token after the wire grammar has been read off it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Token {
     /// The token name, with any `-` prefix or `+` append marker already removed.
     pub name: String,
