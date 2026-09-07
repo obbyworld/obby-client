@@ -3,6 +3,7 @@
 *.pdb
 
 # binding build outputs
+/crates/*/bindings
 /bindings/*/dist
 /bindings/*/pkg
 /bindings/*/build
