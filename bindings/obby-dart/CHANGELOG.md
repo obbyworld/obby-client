@@ -1,3 +1,5 @@
+## 0.3.0
+
 ## 0.2.0
 
 - A method per command: `join`, `sendMessage`, `setTyping` and the rest, with `TypingState`.
