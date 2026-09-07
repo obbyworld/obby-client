@@ -1,0 +1,88 @@
+[workspace]
+resolver = "3"
+members = ["crates/obby-proto", "crates/obby-client", "bindings/obby-ffi", "bindings/obby-wasm", "bindings/obby-python"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/obbyworld/obby-client"
+homepage = "https://github.com/obbyworld/obby-client"
+authors = ["The Obby Team"]
+categories = ["network-programming", "parser-implementations", "api-bindings"]
+keywords = ["irc", "ircv3", "obby", "chat", "sans-io"]
+
+[workspace.dependencies]
+obby-proto = { path = "crates/obby-proto", version = "0.1.0", default-features = false }
+obby-client = { path = "crates/obby-client", version = "0.1.0", default-features = false }
+thiserror = { version = "2", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = "1"
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+# the e2ee primitives the wire format names: X25519, Ed25519, XChaCha20-Poly1305, HKDF-SHA256.
+# all pure Rust so the ratchet builds for wasm, which is the whole reason it can live in the core
+x25519-dalek = { version = "2", default-features = false, features = ["static_secrets"] }
+ed25519-dalek = { version = "2", default-features = false }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+hkdf = { version = "0.12", default-features = false }
+hmac = { version = "0.12", default-features = false }
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+sha2 = { version = "0.10", default-features = false }
+zeroize = { version = "1", default-features = false }
+insta = "1.47"
+# a dev-only TLS stack, so the live smoke test can reach a real server. Never a dependency of the
+# published crates, whose whole point is that they open no sockets
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+proptest = "1"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+rust_2018_idioms = { level = "warn", priority = -1 }
+# a pub item a private module keeps unreachable evades dead_code analysis
+unreachable_pub = "warn"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# restriction lints that catch the mistakes an LLM makes under gate pressure
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+indexing_slicing = "warn"
+# silencing a denied lint locally instead of fixing the code is the escape hatch
+# we most need closed
+allow_attributes = "deny"
+# pedantic noise control
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# it wants backticks around every product name in prose, which reads worse
+doc_markdown = "allow"
+
+# keep panic backtraces for our own code, but drop the heavy debuginfo from
+# dependencies we never step-debug into
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+# wasm ships over the wire, so size wins over speed
+[profile.release-wasm]
+inherits = "release"
+opt-level = "z"
+panic = "abort"

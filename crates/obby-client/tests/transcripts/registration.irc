@@ -1,0 +1,13 @@
+# A plain registration against a server offering a modest capability set.
+# Lines starting with < are sent by the server. Everything else is a comment.
+< :irc.example.org CAP * LS :multi-prefix server-time message-tags batch echo-message sasl=PLAIN,EXTERNAL away-notify
+< :irc.example.org CAP * ACK :multi-prefix
+< :irc.example.org CAP * ACK :server-time
+< :irc.example.org CAP * ACK :message-tags
+< :irc.example.org CAP * ACK :batch
+< :irc.example.org CAP * ACK :echo-message
+< :irc.example.org CAP * NAK :sasl
+< :irc.example.org CAP * ACK :away-notify
+< :irc.example.org 001 me :Welcome to the Example Network
+< :irc.example.org 005 me CASEMAPPING=rfc1459 CHANTYPES=#^$ PREFIX=(qaohv)~&@%+ CHANMODES=beI,k,l,imnpst :are supported by this server
+< PING :abc123

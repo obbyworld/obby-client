@@ -1,0 +1,17 @@
+/target
+**/*.rs.bk
+*.pdb
+
+# binding build outputs
+/bindings/*/dist
+/bindings/*/pkg
+/bindings/*/build
+/bindings/*/.dart_tool
+/bindings/obby-dart/pubspec.lock
+/bindings/*/*.egg-info
+node_modules
+__pycache__
+.venv
+
+# snapshot review leftovers
+*.snap.new

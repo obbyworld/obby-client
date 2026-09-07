@@ -1,0 +1,30 @@
+[package]
+name = "obby-wasm"
+description = "WebAssembly bindings for obby-client, consumed by the browser and by Bun"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+# this crate only exists to be built into an npm package by wasm-pack, so a
+# crates.io release of it would be a source tree nobody can use
+publish = false
+
+# wasm-pack ships an old wasm-opt that rejects the features rustc now emits by default, so we name
+# them rather than turning the optimiser off
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+obby-client = { workspace = true, features = ["std", "serde"] }
+serde_json.workspace = true
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+
+[lints]
+workspace = true

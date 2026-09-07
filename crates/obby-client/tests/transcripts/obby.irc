@@ -1,0 +1,21 @@
+# The Obby extensions: named modes, the command list, a link preview and voice signalling.
+< :irc.example.org CAP * LS :message-tags server-time batch draft/named-modes obsidianirc/cmdslist obsidianirc/voice
+< :irc.example.org CAP * ACK :message-tags
+< :irc.example.org CAP * ACK :server-time
+< :irc.example.org CAP * ACK :batch
+< :irc.example.org CAP * ACK :draft/named-modes
+< :irc.example.org CAP * ACK :obsidianirc/cmdslist
+< :irc.example.org CAP * ACK :obsidianirc/voice
+< :irc.example.org 001 me :Welcome
+< :irc.example.org 005 me CASEMAPPING=ascii CHANTYPES=#^$ PREFIX=(qaohv)~&@%+ CHANMODES=beI,k,l,imnpst WHOX :are supported
+< :irc.example.org BATCH +c obsidianirc/cmdslist
+< @batch=c :irc.example.org CMDSLIST +JOIN +PART +TOPIC +OPER
+< :irc.example.org BATCH -c
+< :irc.example.org CMDSLIST -OPER
+< :me!u@host JOIN #obby
+< :irc.example.org 354 me 332 #obby ident host.example alice H@ alice_acct :Alice Smith
+< :irc.example.org PROP #obby +obsidianirc/censor +obsidianirc/history=30d
+< @msgid=p1;time=2026-09-06T10:00:00.000Z :alice!u@host PRIVMSG #obby :look at https://example.org
+< @+reply=p1;obsidianirc/link-preview-title=Example\sDomain;obsidianirc/link-preview-snippet=A\sdomain\sfor\sexamples :irc.example.org TAGMSG #obby
+< :me!u@host JOIN ^general
+< @+obsidianirc/rtc={"type":"join","channel":"^general"} :alice!u@host TAGMSG ^general

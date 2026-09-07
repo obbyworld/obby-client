@@ -1,0 +1,203 @@
+name: Release
+
+# One tag publishes everything. Every registry authenticates with OIDC, so this repository holds no
+# publishing secret at all: the trust is a statement on each registry naming this repo and this
+# workflow file, which means renaming this file breaks publishing until the registries are updated.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+# Each publish job depends only on verify-tag, never on another publish job. GitHub only blocks a
+# job on what it lists in `needs`, so one registry being down cannot stop the other three.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  verify-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      # the version is decided and committed by scripts/release.sh. This only checks the tag agrees,
+      # so a mistyped tag fails here rather than publishing something nobody chose
+      - id: read
+        run: |
+          set -euo pipefail
+          committed=$(awk '
+            /^\[/ { in_pkg = ($0 == "[workspace.package]") }
+            in_pkg && /^version = "/ { gsub(/^version = "|"$/, ""); print; exit }
+          ' Cargo.toml)
+          tagged="${GITHUB_REF_NAME#v}"
+          if [[ "$committed" != "$tagged" ]]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match committed version ${committed}"
+            exit 1
+          fi
+          echo "version=${committed}" >>"$GITHUB_OUTPUT"
+
+  publish-crates:
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      # obby-client and obby-ffi depend on obby-proto by version, so it has to be resolvable from
+      # the registry before they can even be packaged
+      - run: cargo publish -p obby-proto
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - name: wait for obby-proto to appear in the index
+        run: |
+          set -euo pipefail
+          version="${{ needs.verify-tag.outputs.version }}"
+          # the sparse index is not updated the instant publish returns, and a fixed sleep is a
+          # coin flip
+          for _ in $(seq 1 24); do
+            if curl -sf "https://crates.io/api/v1/crates/obby-proto/${version}" >/dev/null; then
+              exit 0
+            fi
+              sleep 5
+          done
+          echo "::error::obby-proto ${version} never appeared in the index"
+          exit 1
+      - run: cargo publish -p obby-client
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - run: cargo publish -p obby-ffi
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  publish-npm:
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # npm's trusted publishing needs a CLI new enough to speak OIDC
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm install -g npm@latest
+      - uses: taiki-e/install-action@wasm-pack
+      - run: wasm-pack build bindings/obby-wasm --target web --out-dir pkg
+      # provenance is documented as automatic under trusted publishing, but asking for it explicitly
+      # costs nothing and has been reported as needed
+      - run: npm publish --provenance --access public
+        working-directory: bindings/obby-wasm/pkg
+
+  build-wheels:
+    needs: verify-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --manifest-path bindings/obby-python/Cargo.toml --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist
+
+  publish-pypi:
+    needs: [verify-tag, build-wheels]
+    # one platform's wheel failing to build still publishes the rest
+    if: ${{ !cancelled() && needs.verify-tag.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      # trusted publishing cannot run from a reusable workflow, so this step stays inline
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+
+  publish-pub-dev:
+    needs: verify-tag
+    permissions:
+      id-token: write
+    # pub.dev requires its own reusable workflow rather than an inline `dart pub publish`, and only
+    # fires on a tag matching the pattern configured on the package's admin page
+    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
+    with:
+      working-directory: bindings/obby-dart
+
+  build-c-library:
+    needs: verify-tag
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: taiki-e/install-action@cbindgen
+      - run: make header
+      - run: cargo build -p obby-ffi --release --target ${{ matrix.target }}
+      - name: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="obby-ffi-${{ needs.verify-tag.outputs.version }}-${{ matrix.target }}"
+          mkdir -p "$staging/include" "$staging/lib"
+          cp bindings/obby-ffi/include/obby_ffi.h "$staging/include/"
+          cp LICENSE README.md "$staging/"
+          find "target/${{ matrix.target }}/release" -maxdepth 1 \
+            \( -name 'libobby_ffi.*' -o -name 'obby_ffi.dll' -o -name 'obby_ffi.lib' \) \
+            -exec cp {} "$staging/lib/" \;
+          tar czf "${staging}.tar.gz" "$staging"
+          echo "ARCHIVE=${staging}.tar.gz" >>"$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c-library-${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+
+  github-release:
+    needs: [verify-tag, build-c-library]
+    if: ${{ !cancelled() && needs.verify-tag.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: c-library-*
+          merge-multiple: true
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

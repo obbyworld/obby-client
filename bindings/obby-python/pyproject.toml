@@ -1,0 +1,18 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "obby-client"
+description = "The Obby IRCv3 client engine"
+requires-python = ">=3.9"
+license = { text = "GPL-3.0-or-later" }
+readme = "README.md"
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/obbyworld/obby-client"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "obby_client"

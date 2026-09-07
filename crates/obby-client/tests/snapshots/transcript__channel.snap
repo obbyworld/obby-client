@@ -1,0 +1,40 @@
+---
+source: crates/obby-client/tests/transcript.rs
+expression: "replay(include_str!(\"transcripts/channel.irc\"))"
+---
+== sent ==
+CAP LS 302
+NICK me
+USER me 0 * me
+WHO #obby
+
+== connection ==
+phase: Registered
+nick: me
+casemapping: Rfc1459
+
+== channels ==
+#obby (key #obby)  unread 2 mentions 0
+  topic: a channel about obby
+  member @alice (key alice)
+  member carol (key carol)
+  member {DAVE} (key {dave})
+  [1788688800000] Privmsg <alice> morning
+  [1788688801000] Ctcp { command: "ACTION" } <bob> waves
+
+== events ==
+Registered { nick: "me" }
+Isupport { token: "CASEMAPPING", value: Some("rfc1459") }
+Isupport { token: "CHANTYPES", value: Some("#") }
+Isupport { token: "PREFIX", value: Some("(qaohv)~&@%+") }
+Isupport { token: "CHANMODES", value: Some("beI,k,l,imnpst") }
+Changed { change: Joined { channel: "#obby" } }
+Changed { change: MembersChanged { channel: "#obby" } }
+Raw { message: Message { tags: Tags([]), source: Some(Source { name: "irc.example.org", user: None, host: None }), command: "366", params: ["me", "#obby", "End of /NAMES list."] } }
+Changed { change: TopicChanged { channel: "#obby" } }
+Changed { change: ModesChanged { channel: "#obby" } }
+Changed { change: MembersChanged { channel: "#obby" } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688801000, seq: 1 } } }
+Changed { change: NickChanged { from: "[dave]", to: "{DAVE}" } }
+Changed { change: MembersChanged { channel: "#obby" } }

@@ -1,0 +1,29 @@
+---
+source: crates/obby-client/tests/transcript.rs
+expression: "replay(include_str!(\"transcripts/history.irc\"))"
+---
+== sent ==
+CAP LS 302
+NICK me
+USER me 0 * me
+WHO #obby
+
+== connection ==
+phase: Registered
+nick: me
+casemapping: Rfc1459
+
+== channels ==
+#obby (key #obby)  unread 1 mentions 0
+  [1788685200000] Privmsg <alice> earlier  (history)
+  [1788687000000] Privmsg <bob> during the split  (history)
+  [1788696000000] Privmsg <alice> live one
+
+== events ==
+Registered { nick: "me" }
+Isupport { token: "CASEMAPPING", value: Some("rfc1459") }
+Isupport { token: "CHANTYPES", value: Some("#") }
+Changed { change: Joined { channel: "#obby" } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788696000000, seq: 0 } } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788687000000, seq: 1 } } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788685200000, seq: 2 } } }

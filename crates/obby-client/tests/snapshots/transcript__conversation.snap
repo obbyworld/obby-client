@@ -1,0 +1,53 @@
+---
+source: crates/obby-client/tests/transcript.rs
+expression: "replay(include_str!(\"transcripts/conversation.irc\"))"
+---
+== sent ==
+CAP LS 302
+NICK me
+USER me 0 * me
+CAP REQ message-tags
+CAP REQ server-time
+CAP REQ batch
+CAP REQ echo-message
+CAP REQ draft/read-marker
+CAP END
+WHO #obby
+
+== connection ==
+phase: Registered
+nick: me
+casemapping: Rfc1459
+
+== channels ==
+#obby (key #obby)  unread 0 mentions 0
+  read to: 2026-09-06T10:00:05.000Z
+  member alice (key alice) account=alice_acct away=lunch
+  [1788688800000] Privmsg <alice> morning everyone
+  [1788688805000] Privmsg <alice> me: can you look at this?
+      👍 bob
+  [1788688810000] Privmsg <alice> ops only note
+  [1788688820000] Privmsg <alice> oops wrong channel
+      redacted
+
+== events ==
+CapAcknowledged { names: ["message-tags"] }
+CapAcknowledged { names: ["server-time"] }
+CapAcknowledged { names: ["batch"] }
+CapAcknowledged { names: ["echo-message"] }
+CapAcknowledged { names: ["draft/read-marker"] }
+Registered { nick: "me" }
+Isupport { token: "CASEMAPPING", value: Some("rfc1459") }
+Isupport { token: "CHANTYPES", value: Some("#") }
+Isupport { token: "STATUSMSG", value: Some("@+") }
+Isupport { token: "PREFIX", value: Some("(ov)@+") }
+Changed { change: Joined { channel: "#obby" } }
+Changed { change: MembersChanged { channel: "#obby" } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688805000, seq: 1 } } }
+Changed { change: Reacted { target: "#obby", msgid: "a2" } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688810000, seq: 2 } } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688820000, seq: 3 } } }
+Changed { change: Redacted { target: "#obby", msgid: "a4" } }
+Changed { change: MembersChanged { channel: "#obby" } }
+Changed { change: ReadMarker { target: "#obby" } }

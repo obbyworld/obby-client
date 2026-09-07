@@ -1,0 +1,52 @@
+[package]
+name = "obby-client"
+description = "Sans-io IRCv3 and Obby chat client engine: connection, capabilities, state and extensions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+categories.workspace = true
+keywords.workspace = true
+
+[features]
+default = ["std", "serde", "obby", "voice", "e2ee"]
+std = ["obby-proto/std", "serde?/std", "base64/std"]
+serde = ["dep:serde", "obby-proto/serde"]
+# the Obby vendored extensions: cmdslist, channel-bots, link-preview, named modes, filehost
+obby = []
+# voice signaling and room state, never the media plane
+voice = ["obby"]
+# X3DH and the double ratchet
+e2ee = [
+    "obby",
+    "dep:x25519-dalek",
+    "dep:ed25519-dalek",
+    "dep:chacha20poly1305",
+    "dep:hkdf",
+    "dep:zeroize",
+]
+
+[dependencies]
+obby-proto.workspace = true
+base64.workspace = true
+hmac.workspace = true
+x25519-dalek = { workspace = true, optional = true }
+ed25519-dalek = { workspace = true, optional = true }
+chacha20poly1305 = { workspace = true, optional = true }
+hkdf = { workspace = true, optional = true }
+sha2.workspace = true
+zeroize = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+insta.workspace = true
+serde_json.workspace = true
+rustls.workspace = true
+webpki-roots.workspace = true
+
+[lints]
+workspace = true

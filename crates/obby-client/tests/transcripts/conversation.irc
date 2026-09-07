@@ -1,0 +1,19 @@
+# A full conversation: mentions, unread, a reaction, a redaction, away, and a read marker.
+< :irc.example.org CAP * LS :message-tags server-time batch echo-message draft/read-marker
+< :irc.example.org CAP * ACK :message-tags
+< :irc.example.org CAP * ACK :server-time
+< :irc.example.org CAP * ACK :batch
+< :irc.example.org CAP * ACK :echo-message
+< :irc.example.org CAP * ACK :draft/read-marker
+< :irc.example.org 001 me :Welcome
+< :irc.example.org 005 me CASEMAPPING=rfc1459 CHANTYPES=# STATUSMSG=@+ PREFIX=(ov)@+ :are supported
+< :me!u@host JOIN #obby
+< :alice!u@host JOIN #obby alice_acct :Alice
+< @msgid=a1;time=2026-09-06T10:00:00.000Z :alice!u@host PRIVMSG #obby :morning everyone
+< @msgid=a2;time=2026-09-06T10:00:05.000Z :alice!u@host PRIVMSG #obby :me: can you look at this?
+< @+draft/react=👍;+draft/reply=a2 :bob!u@host TAGMSG #obby
+< @msgid=a3;time=2026-09-06T10:00:10.000Z :alice!u@host PRIVMSG @#obby :ops only note
+< @msgid=a4;time=2026-09-06T10:00:20.000Z :alice!u@host PRIVMSG #obby :oops wrong channel
+< :alice!u@host REDACT #obby a4 :mistake
+< :alice!u@host AWAY :lunch
+< :irc.example.org MARKREAD #obby timestamp=2026-09-06T10:00:05.000Z

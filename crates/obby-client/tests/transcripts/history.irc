@@ -1,0 +1,12 @@
+# A chathistory batch replayed after a live message, with a nested netsplit batch inside it.
+< :irc.example.org 001 me :Welcome
+< :irc.example.org 005 me CASEMAPPING=rfc1459 CHANTYPES=# :are supported
+< :me!u@host JOIN #obby
+< @msgid=live;time=2026-09-06T12:00:00.000Z :alice!u@host PRIVMSG #obby :live one
+< :irc.example.org BATCH +h chathistory #obby
+< @batch=h;msgid=old1;time=2026-09-06T09:00:00.000Z :alice!u@host PRIVMSG #obby :earlier
+< @batch=h :irc.example.org BATCH +n netsplit a.example.org b.example.org
+< @batch=n;msgid=old2;time=2026-09-06T09:30:00.000Z :bob!u@host PRIVMSG #obby :during the split
+< :irc.example.org BATCH -n
+< @batch=h;msgid=old1;time=2026-09-06T09:00:00.000Z :alice!u@host PRIVMSG #obby :earlier
+< :irc.example.org BATCH -h

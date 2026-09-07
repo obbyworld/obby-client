@@ -1,0 +1,37 @@
+---
+source: crates/obby-client/tests/transcript.rs
+expression: "replay(include_str!(\"transcripts/registration.irc\"))"
+---
+== sent ==
+CAP LS 302
+NICK me
+USER me 0 * me
+CAP REQ message-tags
+CAP REQ server-time
+CAP REQ batch
+CAP REQ echo-message
+CAP REQ multi-prefix
+CAP REQ away-notify
+CAP REQ sasl
+CAP END
+PONG abc123
+
+== connection ==
+phase: Registered
+nick: me
+casemapping: Rfc1459
+
+== channels ==
+
+== events ==
+CapAcknowledged { names: ["multi-prefix"] }
+CapAcknowledged { names: ["server-time"] }
+CapAcknowledged { names: ["message-tags"] }
+CapAcknowledged { names: ["batch"] }
+CapAcknowledged { names: ["echo-message"] }
+CapAcknowledged { names: ["away-notify"] }
+Registered { nick: "me" }
+Isupport { token: "CASEMAPPING", value: Some("rfc1459") }
+Isupport { token: "CHANTYPES", value: Some("#^$") }
+Isupport { token: "PREFIX", value: Some("(qaohv)~&@%+") }
+Isupport { token: "CHANMODES", value: Some("beI,k,l,imnpst") }

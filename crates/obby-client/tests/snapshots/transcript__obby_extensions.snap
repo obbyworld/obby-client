@@ -1,0 +1,59 @@
+---
+source: crates/obby-client/tests/transcript.rs
+expression: "replay(include_str!(\"transcripts/obby.irc\"))"
+---
+== sent ==
+CAP LS 302
+NICK me
+USER me 0 * me
+CAP REQ message-tags
+CAP REQ server-time
+CAP REQ batch
+CAP REQ draft/named-modes
+CAP REQ obsidianirc/cmdslist
+CAP REQ obsidianirc/voice
+CAP END
+WHO #obby %tcuhnfar,332
+WHO ^general %tcuhnfar,332
+
+== connection ==
+phase: Registered
+nick: me
+casemapping: Ascii
+
+== channels ==
+#obby (key #obby)  unread 1 mentions 0
+  named modes: obsidianirc/censor obsidianirc/history=30d
+  member @alice (key alice) account=alice_acct
+  [1788688800000] Privmsg <alice> look at https://example.org
+      preview: Example Domain
+^general (key ^general)  unread 0 mentions 0
+
+== voice room ^general ==
+kind Publish, 0 participants
+
+== commands the server allows ==
+JOIN PART TOPIC
+
+== events ==
+CapAcknowledged { names: ["message-tags"] }
+CapAcknowledged { names: ["server-time"] }
+CapAcknowledged { names: ["batch"] }
+CapAcknowledged { names: ["draft/named-modes"] }
+CapAcknowledged { names: ["obsidianirc/cmdslist"] }
+CapAcknowledged { names: ["obsidianirc/voice"] }
+Registered { nick: "me" }
+Isupport { token: "CASEMAPPING", value: Some("ascii") }
+Isupport { token: "CHANTYPES", value: Some("#^$") }
+Isupport { token: "PREFIX", value: Some("(qaohv)~&@%+") }
+Isupport { token: "CHANMODES", value: Some("beI,k,l,imnpst") }
+Isupport { token: "WHOX", value: None }
+CommandsChanged
+CommandsChanged
+Changed { change: Joined { channel: "#obby" } }
+Changed { change: MembersChanged { channel: "#obby" } }
+Changed { change: ModesChanged { channel: "#obby" } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
+Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
+Changed { change: Joined { channel: "^general" } }
+Voice { channel: "^general", signal: Join { channel: "^general" } }

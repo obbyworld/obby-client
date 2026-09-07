@@ -1,0 +1,12 @@
+# Joining a channel, the member list, a mode change, and a message.
+< :irc.example.org 001 me :Welcome
+< :irc.example.org 005 me CASEMAPPING=rfc1459 CHANTYPES=# PREFIX=(qaohv)~&@%+ CHANMODES=beI,k,l,imnpst :are supported
+< :me!u@host JOIN #obby
+< :irc.example.org 353 me = #obby :@alice +bob carol!u@host [dave]
+< :irc.example.org 366 me #obby :End of /NAMES list.
+< :irc.example.org 332 me #obby :a channel about obby
+< :alice!u@host MODE #obby +o-v bob bob
+< @msgid=m1;time=2026-09-06T10:00:00.000Z :alice!u@host PRIVMSG #obby :morning
+< @msgid=m2;time=2026-09-06T10:00:01.000Z :bob!u@host PRIVMSG #obby :\x01ACTION waves\x01
+< :[dave]!u@host NICK {DAVE}
+< :bob!u@host QUIT :bye

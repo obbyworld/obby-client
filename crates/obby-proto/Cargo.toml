@@ -1,0 +1,28 @@
+[package]
+name = "obby-proto"
+description = "IRCv3 wire format: message parsing, tag escaping, casemapping, ISUPPORT and modes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+categories.workspace = true
+keywords.workspace = true
+
+[features]
+default = ["std"]
+std = ["thiserror/std", "serde?/std"]
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
