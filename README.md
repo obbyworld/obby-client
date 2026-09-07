@@ -7,14 +7,17 @@
 [![pub.dev](https://img.shields.io/pub/v/obby_client.svg)](https://pub.dev/packages/obby_client)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-The IRCv3 and Obby protocol engine, as one Rust core with bindings for C, TypeScript, Python and
-Dart. It parses the protocol, negotiates capabilities, authenticates, and holds everything a client
-knows: channels, members, conversations, and their messages.
+A full IRCv3 client engine, with the Obby extensions on top, as one Rust core with bindings for C,
+TypeScript, Python and Dart. It talks to any IRC server, and to an Obby server it also speaks voice
+signalling, end-to-end encryption, link previews and the rest. It parses the protocol, negotiates
+capabilities, authenticates, and holds everything a client knows: channels, members, conversations,
+and their messages.
 
-It opens no socket, reads no clock and draws nothing. Your app hands it bytes and the time, then
-drains bytes to write, events to render, and the moment it next wants waking. That is the whole
-interface, and it is the same interface in every language here, so a new Obby client is a user
-interface and nothing else.
+It opens no socket, reads no clock and draws nothing. You choose the host, the port and the
+transport, whether that is TCP with TLS, a WebSocket, or a Tor stream. Your app hands the engine
+bytes and the time, then drains bytes to write, events to render, and the moment it next wants
+waking. That is the whole interface, and it is the same interface in every language here, so a new
+client is a user interface and nothing else.
 
 ## Install
 
@@ -107,11 +110,19 @@ user wants, `handle_bytes` for whatever the socket read, and `tick` for the time
 `tick` next matters, so a host sleeps exactly rather than spinning.
 
 ```rust
+use std::io::{Read, Write};
+use std::net::TcpStream;
+
 use obby_client::{Client, Command, Config, Event, Now};
+
+// the engine never dials, so the server, the port and the transport are yours. Wrap this in TLS
+// for 6697, which is what almost every network wants
+let mut socket = TcpStream::connect(("irc.libera.chat", 6667))?;
 
 let mut client = Client::new(Config::new("mynick"));
 client.connected();
 
+let mut buf = [0u8; 8192];
 loop {
     while let Some(bytes) = client.poll_transmit() {
         socket.write_all(&bytes)?;
@@ -129,6 +140,12 @@ loop {
 }
 ```
 
+`Config` is where the nick, the fallback nicks, the password, the SASL credentials and the message
+retention live. Nothing in it names a server, because the engine never opens one.
+
+A full connection against a real server, TLS included, is
+[`crates/obby-client/tests/live.rs`](crates/obby-client/tests/live.rs).
+
 The model is readable at any moment through `client.model()`: every channel, who is in it, every
 conversation, and the messages, capped per target by the retention you configure.
 
@@ -139,8 +156,13 @@ conversation, and the messages, capped per target by the retention you configure
 import init, { ObbyClient } from "obby-client";
 
 await init();
+
+// a browser reaches IRC over a WebSocket, so the server is whatever your network puts there
+const socket = new WebSocket("wss://irc.example.org/webirc");
+socket.binaryType = "arraybuffer";
+
 const client = new ObbyClient({ nick: "mynick" });
-client.connected();
+socket.onopen = () => client.connected();
 
 socket.onmessage = (message) => {
   client.handleBytes(new Uint8Array(message.data));
@@ -160,7 +182,11 @@ event as for a hundred.
 <summary><b>The same loop in Python</b></summary>
 
 ```python
+import socket as socketlib
+
 from obby_client import Client
+
+sock = socketlib.create_connection(("irc.example.org", 6667))
 
 client = Client({"nick": "mynick"})
 client.connected()
@@ -183,6 +209,8 @@ client.tick(monotonic_ms, unix_ms)
 
 ```dart
 import 'package:obby_client/obby_client.dart';
+
+final socket = await Socket.connect('irc.example.org', 6667);
 
 final client = ObbyClient({'nick': 'mynick'});
 client.connected();
