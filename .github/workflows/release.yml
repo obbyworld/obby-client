@@ -164,7 +164,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: taiki-e/install-action@cbindgen
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cbindgen
       - run: make header
       - run: cargo build -p obby-ffi --release --target ${{ matrix.target }}
       - name: package

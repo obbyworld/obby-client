@@ -85,7 +85,9 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: dart-lang/setup-dart@v1
-      - uses: taiki-e/install-action@cbindgen
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cbindgen
       - uses: taiki-e/install-action@wasm-pack
       # the release publishes what wasm-pack produces, so a cargo check alone would let a broken
       # package reach npm
