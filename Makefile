@@ -103,17 +103,7 @@ wasm: ## browser and bun package
 	sed 's#\./pkg/obby_wasm\.js#./obby_wasm.js#' bindings/obby-wasm/driver.js > bindings/obby-wasm/pkg/driver.js
 	sed 's#\./pkg/obby_wasm\.js#./obby_wasm.js#' bindings/obby-wasm/driver.d.ts > bindings/obby-wasm/pkg/driver.d.ts
 	rm bindings/obby-wasm/driver.js bindings/obby-wasm/driver.d.ts
-	node -e '\
-	  const fs = require("fs"); \
-	  const path = "bindings/obby-wasm/pkg/package.json"; \
-	  const pkg = JSON.parse(fs.readFileSync(path, "utf8")); \
-	  for (const f of ["driver.js", "driver.d.ts"]) if (!pkg.files.includes(f)) pkg.files.push(f); \
-	  pkg.exports = { \
-	    ".": { types: "./obby_wasm.d.ts", default: "./obby_wasm.js" }, \
-	    "./driver": { types: "./driver.d.ts", default: "./driver.js" } \
-	  }; \
-	  fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n"); \
-	'
+	node scripts/package-driver.mjs
 	@if command -v wasm-opt >/dev/null; then \
 	  wasm-opt -O --enable-bulk-memory --enable-nontrapping-float-to-int \
 	    bindings/obby-wasm/pkg/obby_wasm_bg.wasm -o bindings/obby-wasm/pkg/obby_wasm_bg.wasm; \
