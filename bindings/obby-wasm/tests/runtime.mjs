@@ -40,7 +40,7 @@ client.sendMessage("#obby", "hello");
 const sent = new TextDecoder().decode(client.pollTransmit());
 assert.ok(sent.length > 0);
 
-assert.equal(typeof client.pollTimeout(), "bigint", "the class methods keep wasm-bindgen's u64");
+assert.equal(typeof client.pollTimeout(), "number", "milliseconds cross as plain numbers");
 
 client.free();
 console.log("the runtime shapes match the definitions");

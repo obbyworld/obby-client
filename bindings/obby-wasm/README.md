@@ -1,15 +1,18 @@
 # obby-client
 
-The Obby IRCv3 client engine, as WebAssembly. It parses the protocol, drives the connection and
-holds the client model. It opens no socket and keeps no clock, so you hand it bytes and the time.
-One build serves both the browser and Bun.
+**Write the interface. This handles IRC.**
+
+An IRCv3 engine with the client model built in, compiled to WebAssembly. It parses the protocol,
+negotiates capabilities, authenticates, and keeps channels, members, conversations and their
+messages. It does no I/O: you feed it bytes and the time, it tells you what happened and what to
+send. One build serves both the browser and Bun, and every shape it hands you is typed.
 
 ```sh
 npm install obby-client
 ```
 
 Every shape is typed: `Command`, `Event`, `Model` and the rest are generated from the Rust and
-shipped in the package, so a mistyped field is a compile error rather than a runtime surprise.
+shipped in the package, so a mistyped field is a compile error.
 
 ```ts
 import init, { ObbyClient, type Command, type ObbyEvent } from "obby-client";
@@ -28,8 +31,8 @@ client.command({ type: "join", channel: "#obby", key: null });
 ```
 
 `client.model()` returns everything the connection knows: channels, members, conversations and
-their messages. `client.pollTimeout()` says when `client.tick(monotonicMs, unixMs)` next matters,
-so a host sleeps exactly rather than spinning.
+their messages. `client.pollTimeout()` says when `client.tick(performance.now(), Date.now())` next matters,
+so a host can sleep until then.
 
 ## Build from source
 

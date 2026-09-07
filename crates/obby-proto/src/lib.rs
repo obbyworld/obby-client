@@ -31,7 +31,7 @@ pub use format::{Colour, Ctcp, Emphasis, Span, Style, parse_ctcp, parse_spans, s
 pub use isupport::{ChanModes, Isupport, Prefix, Token};
 pub use message::{Message, ParseError, Source};
 pub use mode::{ModeChange, parse_channel_modes, parse_user_modes};
-pub use servertime::parse as parse_server_time;
+pub use servertime::{format as format_server_time, parse as parse_server_time};
 pub use tags::{Tag, Tags};
 
 /// The byte budget for everything after the tags, including the trailing CRLF.

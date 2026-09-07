@@ -35,6 +35,27 @@ enum TypingState {
 /// One client belongs to one isolate. The native handle is not synchronised, so sending its address
 /// to another isolate and rebuilding it there is undefined behaviour, not merely a race. Give each
 /// isolate its own client.
+///
+/// ```dart
+/// final client = ObbyClient({'nick': 'me'});
+/// final socket = await Socket.connect('irc.libera.chat', 6667);
+/// client.handleConnected();
+///
+/// socket.listen((chunk) {
+///   client.handleBytes(chunk);
+///   client.tick(stopwatch.elapsedMilliseconds, DateTime.now().millisecondsSinceEpoch);
+///
+///   for (final event in client.pollEvents()) {
+///     if (event['type'] == 'registered') {
+///       client.join('#obby');
+///       client.sendMessage('#obby', 'hello');
+///     }
+///   }
+///   for (var out = client.pollTransmit(); out != null; out = client.pollTransmit()) {
+///     socket.add(out);
+///   }
+/// });
+/// ```
 class ObbyClient {
   ObbyClient._(this._bindings, this._handle);
 
@@ -126,6 +147,21 @@ class ObbyClient {
   ///
   /// One crossing per drain rather than one per event, because a call over this boundary costs the
   /// same whether it carries one event or a hundred.
+  ///
+  /// An event's `type` names it, in `snake_case`, and the rest of the map is that event's fields.
+  ///
+  /// ```dart
+  /// for (final event in client.pollEvents()) {
+  ///   switch (event['type']) {
+  ///     case 'registered':
+  ///       print('registered as ${event['nick']}');
+  ///     case 'model_changed':
+  ///       print(event['change']);
+  ///     case 'server_reply':
+  ///       print('${event['severity']} ${event['code']} ${event['text']}');
+  ///   }
+  /// }
+  /// ```
   List<Map<String, dynamic>> pollEvents() {
     _alive();
     final decoded = _takeString(_bindings.pollEvents(_handle));
@@ -168,7 +204,17 @@ class ObbyClient {
     }
   }
 
-  /// Do something on this connection. Returns false when the command could not be read.
+  /// Do something on this connection, as a command map the host built itself.
+  ///
+  /// Returns false when the engine could not read the map: an unknown `type`, a missing field, or a
+  /// field of the wrong shape. Every named command below builds its own map, so only this one can
+  /// be handed something unreadable.
+  ///
+  /// ```dart
+  /// if (!client.command({'type': 'join', 'channel': '#obby', 'key': null})) {
+  ///   print('the engine could not read that command');
+  /// }
+  /// ```
   bool command(Map<String, dynamic> command) {
     _alive();
     final json = jsonEncode(command).toNativeUtf8();
@@ -179,76 +225,86 @@ class ObbyClient {
     }
   }
 
-  /// Join a channel.
-  bool join(String channel, {String? key}) {
+  /// Join a channel, with its key when it has one.
+  ///
+  /// ```dart
+  /// client.join('#obby');
+  /// client.join('#staff', key: 'hunter2');
+  /// ```
+  void join(String channel, {String? key}) {
     _alive();
-    return command({'type': 'join', 'channel': channel, 'key': key});
+    command({'type': 'join', 'channel': channel, 'key': key});
   }
 
   /// Leave a channel.
-  bool part(String channel, {String? reason}) {
+  void part(String channel, {String? reason}) {
     _alive();
-    return command({'type': 'part', 'channel': channel, 'reason': reason});
+    command({'type': 'part', 'channel': channel, 'reason': reason});
   }
 
   /// Say something to a channel or a person.
-  bool sendMessage(String target, String text) {
+  ///
+  /// ```dart
+  /// client.sendMessage('#obby', 'hello there');
+  /// client.sendMessage('alice', 'a private word');
+  /// ```
+  void sendMessage(String target, String text) {
     _alive();
-    return command({'type': 'send_message', 'target': target, 'text': text});
+    command({'type': 'send_message', 'target': target, 'text': text});
   }
 
   /// Send a notice, which by convention must never be auto-replied to.
-  bool sendNotice(String target, String text) {
+  void sendNotice(String target, String text) {
     _alive();
-    return command({'type': 'send_notice', 'target': target, 'text': text});
+    command({'type': 'send_notice', 'target': target, 'text': text});
   }
 
   /// Send a `CTCP ACTION`, the third-person form.
-  bool sendAction(String target, String text) {
+  void sendAction(String target, String text) {
     _alive();
-    return command({'type': 'send_action', 'target': target, 'text': text});
+    command({'type': 'send_action', 'target': target, 'text': text});
   }
 
   /// Change our nick.
-  bool setNick(String nick) {
+  void setNick(String nick) {
     _alive();
-    return command({'type': 'set_nick', 'nick': nick});
+    command({'type': 'set_nick', 'nick': nick});
   }
 
   /// Set or clear a channel topic.
-  bool setTopic(String channel, {String? topic}) {
+  void setTopic(String channel, {String? topic}) {
     _alive();
-    return command({'type': 'set_topic', 'channel': channel, 'topic': topic});
+    command({'type': 'set_topic', 'channel': channel, 'topic': topic});
   }
 
   /// Mark ourselves away, or come back.
-  bool setAway({String? message}) {
+  void setAway({String? message}) {
     _alive();
-    return command({'type': 'set_away', 'message': message});
+    command({'type': 'set_away', 'message': message});
   }
 
   /// Say we are typing, so others can show it.
-  bool setTyping(String target, TypingState state) {
+  void setTyping(String target, TypingState state) {
     _alive();
-    return command({'type': 'set_typing', 'target': target, 'state': state._wire});
+    command({'type': 'set_typing', 'target': target, 'state': state._wire});
   }
 
   /// React to a message with an emoji.
-  bool addReaction(String target, String msgid, String emoji) {
+  void addReaction(String target, String msgid, String emoji) {
     _alive();
-    return command({'type': 'add_reaction', 'target': target, 'msgid': msgid, 'emoji': emoji});
+    command({'type': 'add_reaction', 'target': target, 'msgid': msgid, 'emoji': emoji});
   }
 
   /// Take a reaction back.
-  bool removeReaction(String target, String msgid, String emoji) {
+  void removeReaction(String target, String msgid, String emoji) {
     _alive();
-    return command({'type': 'remove_reaction', 'target': target, 'msgid': msgid, 'emoji': emoji});
+    command({'type': 'remove_reaction', 'target': target, 'msgid': msgid, 'emoji': emoji});
   }
 
   /// Ask the server to delete a message.
-  bool redactMessage(String target, String msgid, {String? reason}) {
+  void redactMessage(String target, String msgid, {String? reason}) {
     _alive();
-    return command({
+    command({
       'type': 'redact_message',
       'target': target,
       'msgid': msgid,
@@ -256,72 +312,72 @@ class ObbyClient {
     });
   }
 
-  /// Tell the server how far we have read.
-  bool markRead(String target, String timestamp) {
+  /// Tell the server how far we have read, in milliseconds since the Unix epoch.
+  void markRead(String target, int atMs) {
     _alive();
-    return command({'type': 'mark_read', 'target': target, 'timestamp': timestamp});
+    command({'type': 'mark_read', 'target': target, 'at_ms': atMs});
   }
 
   /// Ask for older messages than the ones we hold.
   ///
-  /// With no [before], this asks for the most recent, which is what a fresh window wants.
-  bool fetchHistory(String target, {String? before, int limit = 50}) {
+  /// With no [beforeMsgid], this asks for the most recent, which is what a fresh window wants.
+  void fetchHistory(String target, {String? beforeMsgid, int limit = 50}) {
     _alive();
-    return command({
+    command({
       'type': 'fetch_history',
       'target': target,
-      'before': before,
+      'before_msgid': beforeMsgid,
       'limit': limit,
     });
   }
 
   /// Set one of our own metadata keys, or clear it.
-  bool setMetadata(String key, {String? value}) {
+  void setMetadata(String key, {String? value}) {
     _alive();
-    return command({'type': 'set_metadata', 'key': key, 'value': value});
+    command({'type': 'set_metadata', 'key': key, 'value': value});
   }
 
   /// Ask to be told when these metadata keys change on anyone we can see.
-  bool subscribeMetadata(List<String> keys) {
+  void subscribeMetadata(List<String> keys) {
     _alive();
-    return command({'type': 'subscribe_metadata', 'keys': keys});
+    command({'type': 'subscribe_metadata', 'keys': keys});
   }
 
   /// Watch these nicks, so the server says when they come and go.
-  bool watchNicks(List<String> nicks) {
+  void watchNicks(List<String> nicks) {
     _alive();
-    return command({'type': 'watch_nicks', 'nicks': nicks});
+    command({'type': 'watch_nicks', 'nicks': nicks});
   }
 
   /// Stop watching these nicks.
-  bool unwatchNicks(List<String> nicks) {
+  void unwatchNicks(List<String> nicks) {
     _alive();
-    return command({'type': 'unwatch_nicks', 'nicks': nicks});
+    command({'type': 'unwatch_nicks', 'nicks': nicks});
   }
 
   /// Send a voice signalling frame to a room.
   ///
   /// The frame is the caller's to build: everything in it comes from a media stack the engine
   /// deliberately knows nothing about.
-  bool sendVoiceSignal(String channel, String signalJson) {
+  void sendVoiceSignal(String channel, Map<String, dynamic> signal) {
     _alive();
-    return command({
+    command({
       'type': 'send_voice_signal',
       'channel': channel,
-      'signal_json': signalJson,
+      'signal': signal,
     });
   }
 
   /// Leave the network.
-  bool quit({String? reason}) {
+  void quit({String? reason}) {
     _alive();
-    return command({'type': 'quit', 'reason': reason});
+    command({'type': 'quit', 'reason': reason});
   }
 
   /// Send a line the engine does not model. The escape hatch, so you are never stuck waiting on it.
-  bool sendRawLine(String line) {
+  void sendRawLine(String line) {
     _alive();
-    return command({'type': 'send_raw_line', 'line': line});
+    command({'type': 'send_raw_line', 'line': line});
   }
 
   /// The engine's version.

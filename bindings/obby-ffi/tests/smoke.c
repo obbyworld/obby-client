@@ -57,6 +57,14 @@ int main(void) {
     assert(obby_client_fetch_history(client, "#obby", NULL, 50));
     expect_sent(client, "CHATHISTORY LATEST #obby * 50");
 
+    assert(obby_client_mark_read(client, "#obby", 1788688800123));
+    expect_sent(client, "MARKREAD #obby timestamp=2026-09-06T10:00:00.123Z");
+
+    assert(obby_client_send_voice_signal(client, "^general",
+                                         "{\"type\":\"join\",\"channel\":\"^general\"}"));
+    expect_sent(client, "TAGMSG ^general");
+    assert(!obby_client_send_voice_signal(client, "^general", "not a frame"));
+
     const char *nicks[] = {"alice", "bob"};
     assert(obby_client_watch_nicks(client, nicks, 2));
     expect_sent(client, "MONITOR + alice,bob");

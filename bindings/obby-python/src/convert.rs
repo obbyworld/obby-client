@@ -7,7 +7,7 @@
 //! CPython, lives in `lib.rs` instead, exercised only through a real interpreter via `maturin
 //! develop` plus a Python smoke test.
 
-use ::obby_client::{Client, Command, Config, Event};
+use ::obby_client::{Client, Command, Config, Event, Signal};
 
 /// Parse a config sent as JSON text, in the shape `Config`'s serde derive expects.
 pub(crate) fn config_from_json(json: &str) -> Result<Config, serde_json::Error> {
@@ -16,6 +16,11 @@ pub(crate) fn config_from_json(json: &str) -> Result<Config, serde_json::Error> 
 
 /// Parse a command sent as JSON text, in the shape `Command`'s serde derive expects.
 pub(crate) fn command_from_json(json: &str) -> Result<Command, serde_json::Error> {
+    serde_json::from_str(json)
+}
+
+/// Parse a voice signalling frame sent as JSON text, in the shape `Signal`'s serde derive expects.
+pub(crate) fn signal_from_json(json: &str) -> Result<Signal, serde_json::Error> {
     serde_json::from_str(json)
 }
 
@@ -83,6 +88,23 @@ mod tests {
     #[test]
     fn command_from_json_rejects_an_object_without_a_command_tag() {
         assert!(command_from_json("{}").is_err());
+    }
+
+    #[test]
+    fn signal_from_json_parses_a_join() {
+        let signal = signal_from_json(r#"{"type":"join","channel":"^general"}"#)
+            .expect("a well-formed frame parses");
+        assert_eq!(
+            signal,
+            Signal::Join {
+                channel: "^general".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn signal_from_json_rejects_a_frame_type_that_does_not_exist() {
+        assert!(signal_from_json(r#"{"type":"not_a_real_frame"}"#).is_err());
     }
 
     #[test]

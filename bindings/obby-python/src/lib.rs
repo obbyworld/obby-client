@@ -30,6 +30,28 @@ mod convert;
 ///
 /// No method here can panic: a bad argument becomes a `ValueError` with a message, because a panic
 /// that unwinds into CPython aborts the interpreter instead of raising an exception.
+///
+/// ```python
+/// import socket, time
+/// from obby_client import Client
+///
+/// sock = socket.create_connection(("irc.example.org", 6667))
+/// started = time.monotonic()
+/// client = Client({"nick": "mynick"})
+/// client.connected()
+///
+/// while True:
+///     while (out := client.poll_transmit()) is not None:
+///         sock.sendall(out)
+///
+///     client.handle_bytes(sock.recv(4096))
+///     client.tick(int((time.monotonic() - started) * 1000), int(time.time() * 1000))
+///
+///     for event in client.poll_events():
+///         if event["type"] == "registered":
+///             client.join("#obby")
+///             client.send_message("#obby", "hello")
+/// ```
 #[pyclass(module = "obby_client")]
 pub struct Client {
     inner: CoreClient,
@@ -98,6 +120,11 @@ impl Client {
     }
 
     /// Join a channel.
+    ///
+    /// ```python
+    /// client.join("#obby")
+    /// client.join("#staff", key="hunter2")
+    /// ```
     #[pyo3(signature = (channel, key=None))]
     fn join(&mut self, channel: String, key: Option<String>) {
         self.inner.command(Command::Join { channel, key });
@@ -110,6 +137,11 @@ impl Client {
     }
 
     /// Say something to a channel or a person.
+    ///
+    /// ```python
+    /// client.send_message("#obby", "hello there")
+    /// client.send_message("alice", "a private word")
+    /// ```
     fn send_message(&mut self, target: String, text: String) {
         self.inner.command(Command::SendMessage { target, text });
     }
@@ -186,18 +218,18 @@ impl Client {
         });
     }
 
-    /// Tell the server how far we have read.
-    fn mark_read(&mut self, target: String, timestamp: String) {
-        self.inner.command(Command::MarkRead { target, timestamp });
+    /// Tell the server how far we have read, in milliseconds since the Unix epoch.
+    fn mark_read(&mut self, target: String, at_ms: u64) {
+        self.inner.command(Command::MarkRead { target, at_ms });
     }
 
-    /// Ask for older messages than the ones we hold. With no `before`, this asks for the most
-    /// recent, which is what a fresh window wants.
-    #[pyo3(signature = (target, before=None, limit=50))]
-    fn fetch_history(&mut self, target: String, before: Option<String>, limit: u16) {
+    /// Ask for older messages than the ones we hold. With no `before_msgid`, this asks for the
+    /// most recent, which is what a fresh window wants.
+    #[pyo3(signature = (target, before_msgid=None, limit=50))]
+    fn fetch_history(&mut self, target: String, before_msgid: Option<String>, limit: u16) {
         self.inner.command(Command::FetchHistory {
             target,
-            before,
+            before_msgid,
             limit,
         });
     }
@@ -225,11 +257,12 @@ impl Client {
 
     /// Send a voice signalling frame to a room. The frame is the host's to build: everything in
     /// it comes from the media stack the core deliberately knows nothing about.
-    fn send_voice_signal(&mut self, channel: String, signal_json: String) {
-        self.inner.command(Command::SendVoiceSignal {
-            channel,
-            signal_json,
-        });
+    fn send_voice_signal(&mut self, channel: String, signal: &Bound<'_, PyAny>) -> PyResult<()> {
+        let signal = convert::signal_from_json(&python_to_json(signal)?)
+            .map_err(|err| PyValueError::new_err(format!("invalid voice signal: {err}")))?;
+        self.inner
+            .command(Command::SendVoiceSignal { channel, signal });
+        Ok(())
     }
 
     /// Leave the network.
@@ -263,6 +296,19 @@ impl Client {
     /// Draining a batch instead of one event per call is what keeps this binding cheap: a call
     /// across the GIL costs the same whether it carries one event or a hundred, so paying that
     /// cost once per drain rather than once per event is what actually saves work.
+    ///
+    /// An event's `type` names it, in `snake_case`, and the rest of the dict is that event's
+    /// fields.
+    ///
+    /// ```python
+    /// for event in client.poll_events():
+    ///     if event["type"] == "registered":
+    ///         print("registered as", event["nick"])
+    ///     elif event["type"] == "model_changed":
+    ///         print(event["change"])
+    ///     elif event["type"] == "server_reply":
+    ///         print(event["severity"], event["code"], event["text"])
+    /// ```
     fn poll_events(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let inner = &mut self.inner;
         let json = py

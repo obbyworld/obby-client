@@ -930,7 +930,7 @@ pub unsafe extern "C" fn obby_client_redact_message(
     }
 }
 
-/// Tell the server how far we have read, as the `server-time` of the last message read.
+/// Tell the server how far we have read, as milliseconds since the Unix epoch.
 ///
 /// # Safety
 /// As [`obby_client_join`].
@@ -938,19 +938,19 @@ pub unsafe extern "C" fn obby_client_redact_message(
 pub unsafe extern "C" fn obby_client_mark_read(
     client: *mut ObbyClient,
     target: *const c_char,
-    timestamp: *const c_char,
+    at_ms: u64,
 ) -> bool {
     unsafe {
         submit(client, || {
             Some(Command::MarkRead {
                 target: str_from_ptr(target)?.to_owned(),
-                timestamp: str_from_ptr(timestamp)?.to_owned(),
+                at_ms,
             })
         })
     }
 }
 
-/// Ask for older messages than the ones we hold. A null `before` asks for the most recent.
+/// Ask for older messages than the ones we hold. A null `before_msgid` asks for the most recent.
 ///
 /// # Safety
 /// As [`obby_client_join`].
@@ -958,14 +958,14 @@ pub unsafe extern "C" fn obby_client_mark_read(
 pub unsafe extern "C" fn obby_client_fetch_history(
     client: *mut ObbyClient,
     target: *const c_char,
-    before: *const c_char,
+    before_msgid: *const c_char,
     limit: u16,
 ) -> bool {
     unsafe {
         submit(client, || {
             Some(Command::FetchHistory {
                 target: str_from_ptr(target)?.to_owned(),
-                before: str_from_ptr(before).map(ToOwned::to_owned),
+                before_msgid: str_from_ptr(before_msgid).map(ToOwned::to_owned),
                 limit,
             })
         })
@@ -1051,8 +1051,11 @@ pub unsafe extern "C" fn obby_client_unwatch_nicks(
     }
 }
 
-/// Send a voice signalling frame to a room. `signal_json` is the frame, already encoded as the
-/// JSON that travels in the tag.
+/// Send a voice signalling frame to a room. `signal_json` is one frame in the shape
+/// [`obby_client::Signal`] serialises to, and a frame this ABI cannot read is refused.
+///
+/// Every other binding takes the frame as a typed value; C has no type to take, so it takes the
+/// JSON.
 ///
 /// # Safety
 /// As [`obby_client_join`].
@@ -1067,7 +1070,7 @@ pub unsafe extern "C" fn obby_client_send_voice_signal(
         submit(client, || {
             Some(Command::SendVoiceSignal {
                 channel: str_from_ptr(channel)?.to_owned(),
-                signal_json: str_from_ptr(signal_json)?.to_owned(),
+                signal: serde_json::from_str(str_from_ptr(signal_json)?).ok()?,
             })
         })
     }

@@ -127,17 +127,19 @@ pub enum Command {
     MarkRead {
         /// The channel or person.
         target: String,
-        /// The `server-time` of the last message read.
-        timestamp: String,
+        /// The last message read, in milliseconds since the Unix epoch. The engine writes the
+        /// `server-time` the wire wants.
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        at_ms: u64,
     },
     /// Ask for older messages than the ones we hold.
     ///
-    /// With no `before`, this asks for the most recent, which is what a fresh window wants.
+    /// With no `before_msgid`, this asks for the most recent, which is what a fresh window wants.
     FetchHistory {
         /// The channel or person.
         target: String,
-        /// Fetch messages older than this one.
-        before: Option<String>,
+        /// Fetch messages older than the message with this id.
+        before_msgid: Option<String>,
         /// How many to ask for.
         limit: u16,
     },
@@ -171,8 +173,8 @@ pub enum Command {
     SendVoiceSignal {
         /// The channel to signal in.
         channel: String,
-        /// The frame, already encoded as the JSON that travels in the tag.
-        signal_json: String,
+        /// The frame. The engine encodes it as the JSON that travels in the tag.
+        signal: crate::voice::Signal,
     },
     /// Leave the network.
     Quit {

@@ -17,6 +17,8 @@ client.join("#obby");
 client.sendMessage("#obby", "hello");
 client.setTyping("#obby", "active");
 client.fetchHistory("#obby", null, 50);
+client.markRead("#obby", Date.now());
+client.sendVoiceSignal("^general", { type: "join", channel: "^general" });
 client.watchNicks(["alice", "bob"]);
 
 // and the generic form stays, for a command a host builds itself
@@ -44,9 +46,9 @@ for (const event of events) {
 
 const bytes: Uint8Array | undefined = client.pollTransmit();
 client.handleBytes(bytes ?? new Uint8Array());
-client.tick(0n, 0n);
+client.tick(performance.now(), Date.now());
 
-const timeout: bigint | undefined = client.pollTimeout();
+const timeout: number | undefined = client.pollTimeout();
 const model: Model = client.model();
 console.log(timeout, model.me.nick, Object.keys(model.channels).length);
 

@@ -327,17 +327,18 @@ reason: string | null, } | { "type": "mark_read",
  */
 target: string, 
 /**
- * The `server-time` of the last message read.
+ * The last message read, in milliseconds since the Unix epoch. The engine writes the
+ * `server-time` the wire wants.
  */
-timestamp: string, } | { "type": "fetch_history", 
+at_ms: bigint, } | { "type": "fetch_history", 
 /**
  * The channel or person.
  */
 target: string, 
 /**
- * Fetch messages older than this one.
+ * Fetch messages older than the message with this id.
  */
-before: string | null, 
+before_msgid: string | null, 
 /**
  * How many to ask for.
  */
@@ -367,9 +368,9 @@ nicks: Array<string>, } | { "type": "send_voice_signal",
  */
 channel: string, 
 /**
- * The frame, already encoded as the JSON that travels in the tag.
+ * The frame. The engine encodes it as the JSON that travels in the tag.
  */
-signal_json: string, } | { "type": "quit", 
+signal: VoiceSignal, } | { "type": "quit", 
 /**
  * Why.
  */

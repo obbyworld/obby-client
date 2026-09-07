@@ -1,7 +1,11 @@
 # obby_client
 
-Dart bindings for the Obby IRCv3 client engine. It parses the protocol, drives the connection and
-holds the client model. It opens no socket and keeps no clock, so you hand it bytes and the time.
+**Write the interface. This handles IRC.**
+
+An IRCv3 engine with the client model built in, for Dart and Flutter. It parses the protocol,
+negotiates capabilities, authenticates, and keeps channels, members, conversations and their
+messages. It does no I/O: you feed it bytes and the time, it tells you what happened and what to
+send.
 
 ```sh
 dart pub add obby_client

@@ -87,7 +87,7 @@ cat >"$out/index.html" <<HTML
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>obby-client, the IRCv3 and Obby protocol engine</title>
-<meta name="description" content="A full IRCv3 client engine with the Obby extensions, as one Rust core with bindings for C, TypeScript, Python and Dart.">
+<meta name="description" content="An IRCv3 client engine to build a chat client on, from Rust, C, TypeScript, Python or Dart.">
 <style>
   :root {
     color-scheme: dark light;
@@ -132,6 +132,12 @@ cat >"$out/index.html" <<HTML
     transition: border-color .15s ease, transform .15s ease;
   }
   a.card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  div.card {
+    padding: 1.1rem 1.25rem; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px;
+  }
+  div.card .name { font-weight: 600; font-size: 1.05rem; }
+  div.card .what { display: block; margin-top: .3rem; color: var(--dim); font-size: .9rem; }
   a.card .name { font-weight: 600; font-size: 1.05rem; }
   a.card .what { display: block; margin-top: .3rem; color: var(--dim); font-size: .9rem; }
   a.card code { font-family: var(--mono); font-size: .82rem; color: var(--accent); }
@@ -150,11 +156,10 @@ cat >"$out/index.html" <<HTML
   <header>
     <p class="tag">version ${version} &middot; GPL-3.0-or-later</p>
     <h1>obby<span class="dot">-</span>client</h1>
-    <p class="lede">A full IRCv3 client engine, with the Obby extensions on top, as one Rust core
-      with bindings for C, TypeScript, Python and Dart. It talks to any IRC server.</p>
-    <p class="lede">It opens no socket, reads no clock and draws nothing. Your app hands it bytes
-      and the time, then drains bytes to write, events to render, and the moment it next wants
-      waking. A new client is a user interface and nothing else.</p>
+    <p class="lede">Write the interface. This handles IRC.</p>
+    <p class="lede">An IRCv3 engine with the client model built in, for Rust, C, TypeScript, Python
+      and Dart. It does no I/O: you feed it bytes and the time, it tells you what happened and what
+      to send. Works against any IRC server.</p>
     <div class="badges">
       <a href="https://crates.io/crates/obby-client"><img alt="crates.io" src="https://img.shields.io/crates/v/obby-client?logo=rust"></a>
       <a href="https://www.npmjs.com/package/obby-client"><img alt="npm" src="https://img.shields.io/npm/v/obby-client?logo=npm"></a>
@@ -163,6 +168,27 @@ cat >"$out/index.html" <<HTML
       <a href="https://github.com/obbyworld/obby-client/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/obbyworld/obby-client/actions/workflows/ci.yml/badge.svg"></a>
     </div>
   </header>
+
+  <section>
+    <h2>Why</h2>
+    <div class="grid">
+      <div class="card">
+        <span class="name">One core, five languages</span>
+        <span class="what">The protocol is written once, in Rust. A new client is the UI plus a
+          socket, and the five bindings cannot drift: a test fails when one of them lags.</span>
+      </div>
+      <div class="card">
+        <span class="name">Types, not strings</span>
+        <span class="what">Commands and events are typed in every language. The TypeScript
+          definitions are generated from the Rust and contain no <code>any</code>.</span>
+      </div>
+      <div class="card">
+        <span class="name">It remembers</span>
+        <span class="what">Channels, members, conversations and their messages, with dedup, history
+          merging and a reconnect that replays what you had.</span>
+      </div>
+    </div>
+  </section>
 
   <section>
     <h2>Reference</h2>
@@ -224,6 +250,26 @@ client.<span class="k">model</span>().channels;</pre>
     <span class="c">"https://cdn.jsdelivr.net/npm/obby-client/obby_wasm.js"</span>;
   <span class="k">await</span> init();
 &lt;/script&gt;</pre>
+  </section>
+
+  <section>
+    <h2>Examples</h2>
+    <div class="grid">
+      <a class="card" href="https://github.com/obbyworld/obby-client/blob/main/crates/obby-client/examples/echo-bot.rs">
+        <span class="name">echo-bot.rs</span>
+        <span class="what">A working client in one file: connect, join, answer anyone who says
+          hello. <code>cargo run --example echo-bot</code></span>
+      </a>
+      <a class="card" href="https://github.com/obbyworld/obby-client/blob/main/bindings/obby-ffi/tests/smoke.c">
+        <span class="name">smoke.c</span>
+        <span class="what">The same loop in C, compiled and run by CI on every push</span>
+      </a>
+      <a class="card" href="https://github.com/obbyworld/obby-client/blob/main/bindings/obby-wasm/tests/typecheck.ts">
+        <span class="name">typecheck.ts</span>
+        <span class="what">The same loop in TypeScript, type-checked and run against the built
+          module</span>
+      </a>
+    </div>
   </section>
 
   <section>

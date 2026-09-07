@@ -250,6 +250,14 @@ impl MessageLog {
         self.messages.get_mut(&key)
     }
 
+    /// Look one up by where it sits in this log.
+    ///
+    /// `Change::MessageAdded` reports a key rather than the message, so this is how a host turns
+    /// that notification into the message it names.
+    pub fn get_by_key(&self, key: &MessageKey) -> Option<&ChatMessage> {
+        self.messages.get(key)
+    }
+
     /// Every message, oldest first.
     pub fn iter(&self) -> btree_map::Values<'_, MessageKey, ChatMessage> {
         self.messages.values()

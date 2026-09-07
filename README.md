@@ -7,17 +7,27 @@
 [![pub.dev](https://img.shields.io/pub/v/obby_client?logo=dart)](https://pub.dev/packages/obby_client)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-A full IRCv3 client engine, with the Obby extensions on top, as one Rust core with bindings for C,
-TypeScript, Python and Dart. It talks to any IRC server, and to an Obby server it also speaks voice
-signalling, end-to-end encryption, link previews and the rest. It parses the protocol, negotiates
-capabilities, authenticates, and holds everything a client knows: channels, members, conversations,
-and their messages.
+**Write the interface. This handles IRC.**
 
-It opens no socket, reads no clock and draws nothing. You choose the host, the port and the
-transport, whether that is TCP with TLS, a WebSocket, or a Tor stream. Your app hands the engine
-bytes and the time, then drains bytes to write, events to render, and the moment it next wants
-waking. That is the whole interface, and it is the same interface in every language here, so a new
-client is a user interface and nothing else.
+An IRCv3 engine with the client model built in, for Rust, C, TypeScript, Python and Dart. It parses
+the protocol, negotiates capabilities, authenticates, and keeps the state you would otherwise write
+yourself: channels, members, conversations, messages, dedup, history merging, and a reconnect that
+replays what you had. Against an Obby server it also does voice signalling, end-to-end encryption
+and link previews. Any IRC server works.
+
+It does no I/O. You open the socket and you read the clock; you feed it bytes and the time, and it
+tells you what happened and what to send. Same API in every language, so a second client is the UI
+and a socket.
+
+## What you get
+
+- **One core, five languages.** The protocol is written once, in Rust. The five bindings cannot
+  drift: a test fails when one of them is missing a command the others have.
+- **Types, not strings.** Every command and event is typed in every language. The TypeScript
+  definitions are generated from the Rust and contain no `any`, and a consumer is type-checked and
+  then run against the built module on every push.
+- **It remembers.** The engine holds the model, so an app renders it and keeps no second copy:
+  scrollback with a retention cap, deduplicated replays, merged history pages, unread counts.
 
 ## Installation
 
@@ -104,10 +114,10 @@ The header is written to `bindings/obby-ffi/include/obby_ffi.h` and the librarie
 
 ## Usage
 
-The engine is a state machine you feed and drain. Four ways in: construction, `command` for what the
-user wants, `handle_bytes` for whatever the socket read, and `tick` for the time. Three ways out:
-`poll_transmit` for bytes to write, `poll_event` for what happened, and `poll_timeout` for when
-`tick` next matters, so a host sleeps exactly rather than spinning.
+You feed the engine and drain it. In: `handle_bytes` with whatever the socket read, `tick` with the
+time, and a method per command (`join`, `send_message`, and so on). Out: `poll_transmit` for bytes
+to send, `poll_event` for what happened, `poll_timeout` for when to call `tick` again, so you can
+sleep until then.
 
 ```rust
 use std::io::{Read, Write};
@@ -179,7 +189,7 @@ event as for a hundred.
 
 The package is strictly typed, and nothing in it is `any`. `Command`, `Event`, `Model`, `Config` and
 every shape they reach are generated from the Rust types, so TypeScript rejects a misspelled field
-before the code runs, and a change to the engine shows up as a type error rather than as silence:
+before the code runs, and a change to the engine shows up as a type error:
 
 ```ts
 for (const event of client.pollEvents()) {
@@ -194,7 +204,7 @@ for (const event of client.pollEvents()) {
 The engine holds WebAssembly memory that the JavaScript collector knows nothing about, so release it
 when you are done: `client.free()`, or `using client = new ObbyClient(...)` where your runtime
 supports it. New event and command shapes arrive in minor releases, so keep a `default` branch
-rather than an exhaustiveness assertion.
+in a switch over them.
 
 </details>
 
@@ -209,7 +219,7 @@ from obby_client import Client
 sock = socketlib.create_connection(("irc.example.org", 6667))
 
 client = Client({"nick": "mynick"})
-client.handle_connected()
+client.connected()
 
 while (out := client.poll_transmit()) is not None:
     sock.sendall(out)
@@ -296,9 +306,25 @@ and run by `make c-smoke`.
 
 ## Documentation
 
-<https://obbyworld.github.io/obby-client> carries the reference for every language, rebuilt from the
-code on each push: Rust, TypeScript, Python, Dart, and the C header. `llms.txt` on that site is the
-same material as one file, for an agent that would rather read than crawl.
+<https://obbyworld.github.io/obby-client> has the reference for every language, rebuilt from the
+code on each push: Rust, TypeScript, Python, Dart and the C header. The same site serves
+[`llms.txt`](https://obbyworld.github.io/obby-client/llms.txt): every type that crosses a binding
+and the whole C ABI in one file, for an agent that would rather read one page than crawl five.
+
+## Examples
+
+[`crates/obby-client/examples/echo-bot.rs`](crates/obby-client/examples/echo-bot.rs) is a working
+client in one file: it connects over TCP, joins a channel, prints what people say and answers
+anyone who says hello.
+
+```sh
+cargo run --example echo-bot -- irc.libera.chat:6667 '#obby' mynick
+```
+
+The same loop in TypeScript is
+[`bindings/obby-wasm/tests/typecheck.ts`](bindings/obby-wasm/tests/typecheck.ts), and in C it is
+[`bindings/obby-ffi/tests/smoke.c`](bindings/obby-ffi/tests/smoke.c). Both are compiled and run by
+CI, so neither can drift from the API.
 
 ## Development
 

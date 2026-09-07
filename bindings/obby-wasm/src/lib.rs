@@ -5,7 +5,7 @@
 //! in as a JS value, every pending [`Event`] comes out at once as a JS array, and bytes come out
 //! separately from events, matching `poll_transmit` versus `poll_event` in the wrapped API.
 
-use obby_client::{Client, Command, Config, Event, Now, Typing};
+use obby_client::{Client, Command, Config, Event, Now, Signal, Typing};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -31,6 +31,10 @@ unsafe extern "C" {
     #[wasm_bindgen(typescript_type = "TypingState")]
     pub type TypingStateValue;
 
+    /// A [`Signal`], as TypeScript sees it.
+    #[wasm_bindgen(typescript_type = "VoiceSignal")]
+    pub type VoiceSignalValue;
+
     /// Everything drained by [`ObbyClient::poll_events`], as TypeScript sees it.
     #[wasm_bindgen(typescript_type = "ObbyEvent[]")]
     pub type EventsValue;
@@ -50,11 +54,63 @@ fn to_js<T: serde::Serialize + ?Sized>(value: &T) -> Result<JsValue, serde_wasm_
     value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }
 
+/// A JavaScript number of milliseconds, as the engine's `u64`.
+///
+/// JavaScript has one number type, and `wasm-bindgen` would otherwise put a `BigInt` in every
+/// signature that carries a millisecond, which a host would have to convert at every call. A
+/// millisecond count is exact in an `f64` for the next quarter of a million years.
+fn as_millis(value: f64) -> u64 {
+    // a host that hands us a NaN, an infinity or a negative gets the epoch, which is wrong but
+    // bounded; a panic in the middle of someone's render loop is not
+    if value.is_finite() && value >= 0.0 {
+        value.trunc() as u64
+    } else {
+        0
+    }
+}
+
+/// The engine's `u64` of milliseconds, as a JavaScript number.
+fn as_js_number(value: u64) -> f64 {
+    value as f64
+}
+
 /// One connection, wrapped for JavaScript.
 ///
 /// Every method mirrors one on [`Client`]. None of them can panic: a bad argument comes back as a
 /// rejected `Result`, which `wasm-bindgen` turns into a thrown JS error, because a panic inside a
 /// WebAssembly module poisons it for the rest of the host's lifetime, with no way to recover.
+///
+/// @example
+/// ```ts
+/// import init, { ObbyClient } from "obby-client";
+///
+/// await init();
+/// const client = new ObbyClient({ nick: "mynick" });
+/// const socket = new WebSocket("wss://irc.example.org/webirc");
+/// socket.binaryType = "arraybuffer";
+///
+/// const flush = () => {
+///   for (let bytes; (bytes = client.pollTransmit()); ) socket.send(bytes);
+/// };
+///
+/// socket.onopen = () => {
+///   client.handleConnected();
+///   flush();
+/// };
+///
+/// socket.onmessage = (message) => {
+///   client.handleBytes(new Uint8Array(message.data as ArrayBuffer));
+///   client.tick(performance.now(), Date.now());
+///
+///   for (const event of client.pollEvents()) {
+///     if (event.type === "registered") {
+///       client.join("#obby");
+///       client.sendMessage("#obby", `hello, I am ${event.nick}`);
+///     }
+///   }
+///   flush();
+/// };
+/// ```
 #[wasm_bindgen]
 pub struct ObbyClient {
     inner: Client,
@@ -88,10 +144,10 @@ impl ObbyClient {
 
     /// Advance the clock. `monotonicMs` drives every deadline; `unixMs` only stamps a message the
     /// server did not stamp itself with `server-time`.
-    pub fn tick(&mut self, monotonic_ms: u64, unix_ms: u64) {
+    pub fn tick(&mut self, monotonic_ms: f64, unix_ms: f64) {
         self.inner.tick(Now {
-            monotonic_ms,
-            unix_ms,
+            monotonic_ms: as_millis(monotonic_ms),
+            unix_ms: as_millis(unix_ms),
         });
     }
 
@@ -99,11 +155,17 @@ impl ObbyClient {
     /// nothing is scheduled. A host can set one timer for exactly this instant instead of polling
     /// on an interval.
     #[wasm_bindgen(js_name = pollTimeout)]
-    pub fn poll_timeout(&self) -> Option<u64> {
-        self.inner.poll_timeout()
+    pub fn poll_timeout(&self) -> Option<f64> {
+        self.inner.poll_timeout().map(as_js_number)
     }
 
     /// Join a channel, with its key when it has one.
+    ///
+    /// @example
+    /// ```ts
+    /// client.join("#obby");
+    /// client.join("#staff", "hunter2");
+    /// ```
     pub fn join(&mut self, channel: String, key: Option<String>) {
         self.apply(Command::Join { channel, key });
     }
@@ -114,6 +176,12 @@ impl ObbyClient {
     }
 
     /// Say something to a channel or a person.
+    ///
+    /// @example
+    /// ```ts
+    /// client.sendMessage("#obby", "hello there");
+    /// client.sendMessage("alice", "a private word");
+    /// ```
     #[wasm_bindgen(js_name = sendMessage)]
     pub fn send_message(&mut self, target: String, text: String) {
         self.apply(Command::SendMessage { target, text });
@@ -187,18 +255,21 @@ impl ObbyClient {
         });
     }
 
-    /// Move our read marker in a target, with a `server-time` timestamp.
+    /// Move our read marker in a target, at a time in milliseconds since the Unix epoch.
     #[wasm_bindgen(js_name = markRead)]
-    pub fn mark_read(&mut self, target: String, timestamp: String) {
-        self.apply(Command::MarkRead { target, timestamp });
+    pub fn mark_read(&mut self, target: String, at_ms: f64) {
+        self.apply(Command::MarkRead {
+            target,
+            at_ms: as_millis(at_ms),
+        });
     }
 
-    /// Ask for older messages in a target, before a `server-time` timestamp.
+    /// Ask for older messages in a target, before the message with this id.
     #[wasm_bindgen(js_name = fetchHistory)]
-    pub fn fetch_history(&mut self, target: String, before: Option<String>, limit: u16) {
+    pub fn fetch_history(&mut self, target: String, before_msgid: Option<String>, limit: u16) {
         self.apply(Command::FetchHistory {
             target,
-            before,
+            before_msgid,
             limit,
         });
     }
@@ -227,13 +298,16 @@ impl ObbyClient {
         self.apply(Command::UnwatchNicks { nicks });
     }
 
-    /// Send one voice signalling frame, as the JSON the room speaks.
+    /// Send one voice signalling frame to a room.
     #[wasm_bindgen(js_name = sendVoiceSignal)]
-    pub fn send_voice_signal(&mut self, channel: String, signal_json: String) {
-        self.apply(Command::SendVoiceSignal {
-            channel,
-            signal_json,
-        });
+    pub fn send_voice_signal(
+        &mut self,
+        channel: String,
+        signal: VoiceSignalValue,
+    ) -> Result<(), JsValue> {
+        let signal: Signal = serde_wasm_bindgen::from_value(signal.into())?;
+        self.apply(Command::SendVoiceSignal { channel, signal });
+        Ok(())
     }
 
     /// Leave the server, with a reason the others see.
@@ -251,6 +325,15 @@ impl ObbyClient {
     ///
     /// Every command also has a method of its own, such as [`Self::join`]; this is the one call
     /// that takes a command a host built itself.
+    ///
+    /// Anything the engine cannot read throws, rather than going quietly missing.
+    ///
+    /// @example
+    /// ```ts
+    /// const command: Command = { type: "join", channel: "#obby", key: null };
+    /// client.command(command);
+    /// client.command({ type: "set_topic", channel: "#obby", topic: "the new topic" });
+    /// ```
     pub fn command(&mut self, command: CommandValue) -> Result<(), JsValue> {
         let command: Command = serde_wasm_bindgen::from_value(command.into())?;
         self.apply(command);
@@ -279,6 +362,23 @@ impl ObbyClient {
     /// target this core is bound into: a call across the WebAssembly boundary costs the same
     /// whether it carries one event or a hundred, so paying that cost once per drain rather than
     /// once per event is what actually saves work.
+    ///
+    /// @example
+    /// ```ts
+    /// for (const event of client.pollEvents()) {
+    ///   switch (event.type) {
+    ///     case "registered":
+    ///       console.log(`registered as ${event.nick}`);
+    ///       break;
+    ///     case "model_changed":
+    ///       if (event.change.type === "message_added") render(event.change.target);
+    ///       break;
+    ///     case "server_reply":
+    ///       console.log(event.severity, event.code, event.text);
+    ///       break;
+    ///   }
+    /// }
+    /// ```
     #[wasm_bindgen(js_name = pollEvents)]
     pub fn poll_events(&mut self) -> Result<EventsValue, JsValue> {
         Ok(to_js(&self.drain_events())?.unchecked_into())
@@ -358,7 +458,7 @@ mod tests {
         let first_deadline = client
             .poll_timeout()
             .expect("keepalive is armed on connect");
-        client.tick(first_deadline, 0);
+        client.tick(first_deadline, 0.0);
         let next_deadline = client
             .poll_timeout()
             .expect("a fired deadline is replaced by the next one");

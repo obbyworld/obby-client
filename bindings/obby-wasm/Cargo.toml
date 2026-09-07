@@ -27,5 +27,28 @@ serde_json.workspace = true
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 
-[lints]
-workspace = true
+# the workspace set, with one exception this crate exists to make: JavaScript has a single number
+# type, so the boundary has to turn a `u64` of milliseconds into an `f64` and back. The alternative
+# is a `BigInt` in every signature that carries a millisecond, converted at every call site.
+[lints.rust]
+unsafe_code = "deny"
+rust_2018_idioms = { level = "warn", priority = -1 }
+missing_docs = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+allow_attributes = "deny"
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+doc_markdown = "allow"

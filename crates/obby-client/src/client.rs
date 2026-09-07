@@ -247,6 +247,15 @@ pub struct Client {
 
 impl Client {
     /// Build an engine that has not connected yet. Nothing is written until [`Client::handle_connected`].
+    ///
+    /// ```
+    /// use obby_client::{Client, Config, Phase};
+    ///
+    /// let mut client = Client::new(Config::new("mynick"));
+    /// assert_eq!(client.nick(), "mynick");
+    /// assert_eq!(client.phase(), Phase::Disconnected);
+    /// assert!(client.poll_transmit().is_none());
+    /// ```
     pub fn new(config: Config) -> Self {
         let mut config = config;
         // a host that deserialised a partial config gets these filled in rather than registering
@@ -294,6 +303,19 @@ impl Client {
     ///
     /// The host calls this once the socket is open and the TLS handshake, if any, has finished. The
     /// engine has no way to know that on its own.
+    ///
+    /// ```
+    /// # use obby_client::{Client, Config};
+    /// let mut client = Client::new(Config::new("mynick"));
+    /// client.handle_connected();
+    ///
+    /// let mut sent = Vec::new();
+    /// while let Some(bytes) = client.poll_transmit() {
+    ///     sent.extend_from_slice(&bytes);
+    /// }
+    /// assert!(sent.starts_with(b"CAP LS 302\r\n"));
+    /// assert!(sent.ends_with(b"USER mynick 0 * mynick\r\n"));
+    /// ```
     pub fn handle_connected(&mut self) {
         self.phase = Phase::Negotiating;
         self.backoff.reset();
@@ -350,6 +372,21 @@ impl Client {
     ///
     /// The host supplies both clocks because the engine has neither: the monotonic one drives every
     /// deadline, and the wall clock only stamps a message the server did not stamp itself.
+    ///
+    /// ```
+    /// # use obby_client::{Client, Config, Now};
+    /// let mut client = Client::new(Config::new("mynick"));
+    /// client.handle_connected();
+    /// while client.poll_transmit().is_some() {}
+    ///
+    /// // sleeping until exactly the next deadline is all a host's loop has to do
+    /// let due_ms = client.poll_timeout().expect("the keepalive is armed on connect");
+    /// client.tick(Now {
+    ///     monotonic_ms: due_ms,
+    ///     unix_ms: 1_788_688_800_000,
+    /// });
+    /// assert_eq!(client.poll_transmit(), Some(b"PING mynick\r\n".to_vec()));
+    /// ```
     pub fn tick(&mut self, now: Now) {
         self.monotonic_ms = now.monotonic_ms;
         self.latest_ms = self.latest_ms.max(now.unix_ms);
@@ -382,6 +419,16 @@ impl Client {
     }
 
     /// Join a channel, with its key when it has one.
+    ///
+    /// ```
+    /// # use obby_client::{Client, Config};
+    /// let mut client = Client::new(Config::new("mynick"));
+    /// client.join("#obby", None);
+    /// client.join("#staff", Some("hunter2".to_string()));
+    ///
+    /// assert_eq!(client.poll_transmit(), Some(b"JOIN #obby\r\n".to_vec()));
+    /// assert_eq!(client.poll_transmit(), Some(b"JOIN #staff hunter2\r\n".to_vec()));
+    /// ```
     pub fn join(&mut self, channel: impl Into<String>, key: Option<String>) {
         self.command(Command::Join {
             channel: channel.into(),
@@ -398,6 +445,17 @@ impl Client {
     }
 
     /// Say something to a channel or a person.
+    ///
+    /// ```
+    /// # use obby_client::{Client, Config};
+    /// let mut client = Client::new(Config::new("mynick"));
+    /// client.send_message("#obby", "hello there");
+    ///
+    /// assert_eq!(
+    ///     client.poll_transmit(),
+    ///     Some(b"PRIVMSG #obby :hello there\r\n".to_vec()),
+    /// );
+    /// ```
     pub fn send_message(&mut self, target: impl Into<String>, text: impl Into<String>) {
         self.command(Command::SendMessage {
             target: target.into(),
@@ -489,19 +547,24 @@ impl Client {
         });
     }
 
-    /// Move our read marker in a target, with a `server-time` timestamp.
-    pub fn mark_read(&mut self, target: impl Into<String>, timestamp: impl Into<String>) {
+    /// Move our read marker in a target, at a time in milliseconds since the Unix epoch.
+    pub fn mark_read(&mut self, target: impl Into<String>, at_ms: u64) {
         self.command(Command::MarkRead {
             target: target.into(),
-            timestamp: timestamp.into(),
+            at_ms,
         });
     }
 
-    /// Ask for older messages in a target, before a `server-time` timestamp.
-    pub fn fetch_history(&mut self, target: impl Into<String>, before: Option<String>, limit: u16) {
+    /// Ask for older messages in a target, before the message with this id.
+    pub fn fetch_history(
+        &mut self,
+        target: impl Into<String>,
+        before_msgid: Option<String>,
+        limit: u16,
+    ) {
         self.command(Command::FetchHistory {
             target: target.into(),
-            before,
+            before_msgid,
             limit,
         });
     }
@@ -529,16 +592,12 @@ impl Client {
         self.command(Command::UnwatchNicks { nicks });
     }
 
-    /// Send one voice signalling frame, as the JSON the room speaks.
+    /// Send one voice signalling frame to a room.
     #[cfg(feature = "voice")]
-    pub fn send_voice_signal(
-        &mut self,
-        channel: impl Into<String>,
-        signal_json: impl Into<String>,
-    ) {
+    pub fn send_voice_signal(&mut self, channel: impl Into<String>, signal: crate::voice::Signal) {
         self.command(Command::SendVoiceSignal {
             channel: channel.into(),
-            signal_json: signal_json.into(),
+            signal,
         });
     }
 
@@ -653,15 +712,18 @@ impl Client {
                 Some(reason) => Message::new("REDACT", [target, msgid, reason]),
                 None => Message::new("REDACT", [target, msgid]),
             },
-            Command::MarkRead { target, timestamp } => Message::new(
+            Command::MarkRead { target, at_ms } => Message::new(
                 "MARKREAD",
-                [target, alloc::format!("timestamp={timestamp}")],
+                [
+                    target,
+                    alloc::format!("timestamp={}", obby_proto::format_server_time(at_ms)),
+                ],
             ),
             Command::FetchHistory {
                 target,
-                before,
+                before_msgid,
                 limit,
-            } => match before {
+            } => match before_msgid {
                 Some(msgid) => Message::new(
                     "CHATHISTORY",
                     [
@@ -689,13 +751,10 @@ impl Client {
                 None => Message::new("METADATA", ["*".to_string(), "SET".to_string(), key]),
             },
             #[cfg(feature = "voice")]
-            Command::SendVoiceSignal {
-                channel,
-                signal_json,
-            } => {
+            Command::SendVoiceSignal { channel, signal } => {
                 let mut line = Message::new("TAGMSG", [channel]);
                 line.tags
-                    .set(obby_proto::Tag::new("+obsidianirc/rtc", signal_json));
+                    .set(obby_proto::Tag::new("+obsidianirc/rtc", signal.to_json()));
                 line
             }
             Command::Quit { reason } => match reason {
@@ -834,6 +893,18 @@ impl Client {
     }
 
     /// Feed whatever the transport read. Partial lines are held until the rest arrives.
+    ///
+    /// ```
+    /// # use obby_client::{Client, Config};
+    /// let mut client = Client::new(Config::new("mynick"));
+    ///
+    /// // a socket read splits wherever it likes, and the engine holds the remainder
+    /// client.handle_bytes(b"PING :ab");
+    /// assert!(client.poll_transmit().is_none());
+    ///
+    /// client.handle_bytes(b"c\r\n");
+    /// assert_eq!(client.poll_transmit(), Some(b"PONG abc\r\n".to_vec()));
+    /// ```
     pub fn handle_bytes(&mut self, data: &[u8]) {
         self.partial.extend_from_slice(data);
         loop {
@@ -869,11 +940,37 @@ impl Client {
     }
 
     /// Bytes the host should write to the transport, or `None` when there are none.
+    ///
+    /// ```
+    /// # use obby_client::{Client, Config};
+    /// let mut client = Client::new(Config::new("mynick"));
+    /// client.handle_connected();
+    ///
+    /// let mut socket = Vec::new();
+    /// while let Some(bytes) = client.poll_transmit() {
+    ///     socket.extend_from_slice(&bytes); // a real host writes these to its socket
+    /// }
+    /// assert!(socket.starts_with(b"CAP LS 302\r\n"));
+    /// ```
     pub fn poll_transmit(&mut self) -> Option<Vec<u8>> {
         self.outbox.pop_front()
     }
 
     /// The next thing that happened, or `None` when the host is caught up.
+    ///
+    /// ```
+    /// # use obby_client::{Client, Config, Event};
+    /// let mut client = Client::new(Config::new("mynick"));
+    /// client.handle_bytes(b":irc.example.org 001 mynick :Welcome\r\n");
+    ///
+    /// let mut registered_as = None;
+    /// while let Some(event) = client.poll_event() {
+    ///     if let Event::Registered { nick } = event {
+    ///         registered_as = Some(nick);
+    ///     }
+    /// }
+    /// assert_eq!(registered_as.as_deref(), Some("mynick"));
+    /// ```
     pub fn poll_event(&mut self) -> Option<Event> {
         self.events.pop_front()
     }
@@ -2367,18 +2464,31 @@ mod command_tests {
     }
 
     #[test]
+    fn a_read_marker_travels_as_a_server_time() {
+        let mut client = ready(b":s CAP * NAK :echo-message\r\n");
+        client.command(Command::MarkRead {
+            target: "#obby".to_string(),
+            at_ms: 1_788_688_800_123,
+        });
+        assert!(
+            sent(&mut client).contains("MARKREAD #obby timestamp=2026-09-06T10:00:00.123Z"),
+            "the host counts in milliseconds and the engine writes what the wire wants"
+        );
+    }
+
+    #[test]
     fn asking_for_history_pages_backwards_from_a_message() {
         let mut client = ready(b":s CAP * NAK :echo-message\r\n");
         client.command(Command::FetchHistory {
             target: "#obby".to_string(),
-            before: None,
+            before_msgid: None,
             limit: 50,
         });
         assert!(sent(&mut client).contains("CHATHISTORY LATEST #obby * 50"));
 
         client.command(Command::FetchHistory {
             target: "#obby".to_string(),
-            before: Some("m1".to_string()),
+            before_msgid: Some("m1".to_string()),
             limit: 50,
         });
         assert!(sent(&mut client).contains("CHATHISTORY BEFORE #obby msgid=m1 50"));
@@ -2704,13 +2814,15 @@ mod voice_tests {
         while client.poll_transmit().is_some() {}
         client.command(Command::SendVoiceSignal {
             channel: "^general".to_string(),
-            signal_json: r#"{"type":"join","channel":"^general"}"#.to_string(),
+            signal: crate::voice::Signal::Join {
+                channel: "^general".to_string(),
+            },
         });
         let mut sent = String::new();
         while let Some(bytes) = client.poll_transmit() {
             sent.push_str(&String::from_utf8_lossy(&bytes));
         }
-        assert!(sent.contains("+obsidianirc/rtc="));
+        assert!(sent.contains(r#"+obsidianirc/rtc={"type":"join","channel":"^general"}"#));
         assert!(sent.contains("TAGMSG ^general"));
     }
 }

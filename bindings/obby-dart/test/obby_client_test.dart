@@ -70,7 +70,7 @@ void main() {
     addTearDown(client.close);
     while (client.pollTransmit() != null) {}
 
-    expect(client.join('#obby'), isTrue);
+    client.join('#obby');
     expect(utf8.decode(client.pollTransmit()!), 'JOIN #obby\r\n');
   });
 
@@ -79,7 +79,7 @@ void main() {
     addTearDown(client.close);
     while (client.pollTransmit() != null) {}
 
-    expect(client.sendMessage('#obby', 'hello there'), isTrue);
+    client.sendMessage('#obby', 'hello there');
     expect(utf8.decode(client.pollTransmit()!), 'PRIVMSG #obby :hello there\r\n');
   });
 
@@ -88,8 +88,35 @@ void main() {
     addTearDown(client.close);
     while (client.pollTransmit() != null) {}
 
-    expect(client.setTyping('#obby', TypingState.active), isTrue);
+    client.setTyping('#obby', TypingState.active);
     expect(utf8.decode(client.pollTransmit()!), contains('+typing=active'));
+  });
+
+  test('markRead counts in milliseconds and the engine writes the server-time', () {
+    final client = open();
+    addTearDown(client.close);
+    while (client.pollTransmit() != null) {}
+
+    client.markRead('#obby', 1788688800123);
+    expect(
+      utf8.decode(client.pollTransmit()!),
+      'MARKREAD #obby timestamp=2026-09-06T10:00:00.123Z\r\n',
+    );
+  });
+
+  test('sendVoiceSignal takes the frame as a map', () {
+    final client = open();
+    addTearDown(client.close);
+    while (client.pollTransmit() != null) {}
+
+    client.sendVoiceSignal('^general', {'type': 'join', 'channel': '^general'});
+    expect(utf8.decode(client.pollTransmit()!), contains('TAGMSG ^general'));
+    client.sendVoiceSignal('^general', {'type': 'not_a_real_frame'});
+    expect(
+      client.pollTransmit(),
+      isNull,
+      reason: 'a frame the engine cannot read reaches the wire as nothing at all',
+    );
   });
 
   test('quit sends a QUIT', () {
@@ -97,7 +124,7 @@ void main() {
     addTearDown(client.close);
     while (client.pollTransmit() != null) {}
 
-    expect(client.quit(reason: 'see you later'), isTrue);
+    client.quit(reason: 'see you later');
     expect(utf8.decode(client.pollTransmit()!), 'QUIT :see you later\r\n');
   });
 

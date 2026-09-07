@@ -532,22 +532,22 @@ bool obby_client_redact_message(struct obby_client_t *client,
                                 const char *reason);
 
 /**
- * Tell the server how far we have read, as the `server-time` of the last message read.
+ * Tell the server how far we have read, as milliseconds since the Unix epoch.
  *
  * # Safety
  * As [`obby_client_join`].
  */
-bool obby_client_mark_read(struct obby_client_t *client, const char *target, const char *timestamp);
+bool obby_client_mark_read(struct obby_client_t *client, const char *target, uint64_t at_ms);
 
 /**
- * Ask for older messages than the ones we hold. A null `before` asks for the most recent.
+ * Ask for older messages than the ones we hold. A null `before_msgid` asks for the most recent.
  *
  * # Safety
  * As [`obby_client_join`].
  */
 bool obby_client_fetch_history(struct obby_client_t *client,
                                const char *target,
-                               const char *before,
+                               const char *before_msgid,
                                uint16_t limit);
 
 /**
@@ -589,8 +589,11 @@ bool obby_client_unwatch_nicks(struct obby_client_t *client,
                                size_t count);
 
 /**
- * Send a voice signalling frame to a room. `signal_json` is the frame, already encoded as the
- * JSON that travels in the tag.
+ * Send a voice signalling frame to a room. `signal_json` is one frame in the shape
+ * [`obby_client::Signal`] serialises to, and a frame this ABI cannot read is refused.
+ *
+ * Every other binding takes the frame as a typed value; C has no type to take, so it takes the
+ * JSON.
  *
  * # Safety
  * As [`obby_client_join`].

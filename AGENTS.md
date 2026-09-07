@@ -1,7 +1,7 @@
 # obby-client: agent guide
 
 The protocol and state engine behind every Obby client. One Rust core, bound into C, TypeScript
-(browser and Bun), Python, and Dart, so a new Obby client is a UI and nothing else.
+(browser and Bun), Python and Dart, so porting a client is mostly the UI.
 
 It does no I/O. The host owns the socket, the clock and the screen; the engine owns the protocol and
 the model.
@@ -17,7 +17,7 @@ crates/
     src/isupport.rs    005 tokens and the typed settings they drive
     src/mode.rs        MODE parsing, arity driven by CHANMODES and PREFIX
     src/format.rs      mIRC formatting and CTCP into spans
-    src/servertime.rs  the server-time tag into milliseconds
+    src/servertime.rs  the server-time tag to milliseconds and back
   tests/               the official ircdocs parser vectors
   obby-client/         the engine
     src/client.rs      the connection: registration, PING, ISUPPORT, the poll loop
@@ -35,6 +35,7 @@ crates/
     src/voice.rs       voice signalling and room state, never the media plane
     src/e2ee.rs        X3DH and the double ratchet
   tests/transcripts/   recorded sessions, replayed and snapshotted
+  examples/echo-bot.rs a working client in one file, built by CI
 bindings/
   obby-ffi/            the C ABI, and the only place unsafe lives
   obby-wasm/           one wasm-pack artifact for the browser and for Bun

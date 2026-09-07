@@ -1,7 +1,11 @@
 # obby-client
 
-The Obby IRCv3 client engine. It parses the protocol, drives the connection and holds the client
-model. It opens no socket and keeps no clock, so the host feeds it bytes and time.
+**Write the interface. This handles IRC.**
+
+An IRCv3 engine with the client model built in. It parses the protocol, negotiates capabilities,
+authenticates, and keeps channels, members, conversations and their messages. It does no I/O: you
+feed it bytes and the time, it tells you what happened and what to send. The engine is Rust, so the
+protocol work does not run in Python.
 
 ```sh
 pip install obby-client
@@ -11,7 +15,7 @@ pip install obby-client
 from obby_client import Client
 
 client = Client({"nick": "mynick"})
-client.handle_connected()
+client.connected()
 
 while (out := client.poll_transmit()) is not None:
     sock.sendall(out)
