@@ -20,6 +20,12 @@ fn workspace_root() -> Option<PathBuf> {
     None
 }
 
+/// The lines from the one a marker opens down to the line that closes it.
+fn block<'a>(source: &'a str, marker: &str) -> &'a str {
+    let body = &source[source.find(marker).unwrap_or_default()..];
+    &body[..body.find("\n}\n").unwrap_or(body.len())]
+}
+
 /// Every variant of `Command`, in the order the enum declares them.
 fn commands(root: &Path) -> Vec<String> {
     let path = root.join("crates/obby-client/src/command.rs");
@@ -29,10 +35,7 @@ fn commands(root: &Path) -> Vec<String> {
         "the command module is missing at {}",
         path.display()
     );
-    let start = source.find("pub enum Command {").unwrap_or_default();
-    let body = &source[start..];
-    let end = body.find("\n}\n").unwrap_or(body.len());
-    body[..end]
+    block(&source, "pub enum Command {")
         .lines()
         .filter_map(|line| {
             let name = line.strip_prefix("    ")?;
@@ -124,5 +127,52 @@ fn every_command_has_a_method_in_every_binding() {
         "the Dart binding",
         "bindings/obby-dart/lib/obby_client.dart",
         camel,
+    );
+}
+
+/// Every method name declared inside the Python binding's `#[pymethods]` block.
+///
+/// `new` is the constructor pyo3 exposes as `__init__`, which is what the stub has to spell.
+fn python_methods(root: &Path) -> Vec<String> {
+    let path = root.join("bindings/obby-python/src/lib.rs");
+    let source = fs::read_to_string(&path).unwrap_or_default();
+    assert!(
+        !source.is_empty(),
+        "the Python binding is missing at {}",
+        path.display()
+    );
+    block(&source, "#[pymethods]")
+        .lines()
+        .filter_map(|line| {
+            let name = line.trim().strip_prefix("fn ")?;
+            let name = name.split('(').next()?;
+            Some(if name == "new" {
+                "__init__".to_owned()
+            } else {
+                name.to_owned()
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn every_python_method_is_in_the_type_stub() {
+    let Some(root) = workspace_root() else {
+        return;
+    };
+
+    let stub_path = "bindings/obby-python/obby_client.pyi";
+    let stub = fs::read_to_string(root.join(stub_path)).unwrap_or_default();
+    assert!(!stub.is_empty(), "the type stub is missing at {stub_path}");
+
+    let missing: Vec<String> = python_methods(&root)
+        .into_iter()
+        .filter(|method| !stub.contains(&format!("def {method}(")))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "the type stub has no entry for: {}. A method missing from it is invisible to mypy and to \
+         every editor, which is the whole reason the stub exists.",
+        missing.join(", ")
     );
 }

@@ -20,9 +20,10 @@
 //! produces, which is far less code than a hand-written `serde_json::Value` to `PyObject` walker
 //! and just as correct.
 
-use ::obby_client::{Client as CoreClient, Command, Now, Typing};
+use ::obby_client::{Client as CoreClient, Command, Config, Now, Typing};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyType;
 
 mod convert;
 
@@ -37,7 +38,7 @@ mod convert;
 ///
 /// sock = socket.create_connection(("irc.example.org", 6667))
 /// started = time.monotonic()
-/// client = Client({"nick": "mynick"})
+/// client = Client("mynick")
 /// client.handle_connected()
 ///
 /// while True:
@@ -61,11 +62,57 @@ pub struct Client {
 impl Client {
     /// Build an engine that has not connected yet. Nothing is written until [`Self::handle_connected`].
     ///
-    /// `config` is a dict, or JSON text, with the same shape as `obby_client::Config`. Only `nick`
-    /// is required; every other field has a default.
+    /// Only `nick` is required; every other setting keeps the core's default when it is omitted.
+    /// `sasl` is the one argument that is not a scalar, so it crosses as a dict, or as JSON text,
+    /// in the shape `obby_client::Credentials` serialises to: a `mechanism` of `"plain"`,
+    /// `"external"` or `"scram"`, alongside that mechanism's own fields.
+    ///
+    /// ```python
+    /// client = Client("mynick", retention=200)
+    /// client = Client("mynick", sasl={"mechanism": "plain", "username": "me", "password": "pw"})
+    /// ```
     #[new]
+    #[pyo3(signature = (nick, *, username=None, realname=None, password=None, sasl=None, retention=None, alt_nicks=None))]
+    fn new(
+        nick: String,
+        username: Option<String>,
+        realname: Option<String>,
+        password: Option<String>,
+        sasl: Option<&Bound<'_, PyAny>>,
+        retention: Option<usize>,
+        alt_nicks: Option<Vec<String>>,
+    ) -> PyResult<Self> {
+        let mut config = Config::new(nick);
+        if let Some(username) = username {
+            config.username = username;
+        }
+        if let Some(realname) = realname {
+            config.realname = realname;
+        }
+        config.password = password;
+        if let Some(sasl) = sasl {
+            let sasl = convert::credentials_from_json(&python_to_json(sasl)?)
+                .map_err(|err| PyValueError::new_err(format!("invalid sasl: {err}")))?;
+            config.sasl = Some(sasl);
+        }
+        if let Some(retention) = retention {
+            config.retention = retention;
+        }
+        if let Some(alt_nicks) = alt_nicks {
+            config.alt_nicks = alt_nicks;
+        }
+        Ok(Self {
+            inner: CoreClient::new(config),
+        })
+    }
+
+    /// Build an engine from a whole config at once, for a host that already holds one as a dict or
+    /// as JSON text, rather than as separate arguments.
+    ///
+    /// `config` has the same shape as `obby_client::Config`. Only `nick` is required.
+    #[classmethod]
     #[pyo3(text_signature = "(config)")]
-    fn new(config: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn from_config(_cls: &Bound<'_, PyType>, config: &Bound<'_, PyAny>) -> PyResult<Self> {
         let config = python_to_json(config)?;
         let config = convert::config_from_json(&config)
             .map_err(|err| PyValueError::new_err(format!("invalid config: {err}")))?;

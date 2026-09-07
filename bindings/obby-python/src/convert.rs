@@ -7,10 +7,15 @@
 //! CPython, lives in `lib.rs` instead, exercised only through a real interpreter via `maturin
 //! develop` plus a Python smoke test.
 
-use ::obby_client::{Client, Command, Config, Event, Signal};
+use ::obby_client::{Client, Command, Config, Credentials, Event, Signal};
 
 /// Parse a config sent as JSON text, in the shape `Config`'s serde derive expects.
 pub(crate) fn config_from_json(json: &str) -> Result<Config, serde_json::Error> {
+    serde_json::from_str(json)
+}
+
+/// Parse SASL credentials sent as JSON text, in the shape `Credentials`'s serde derive expects.
+pub(crate) fn credentials_from_json(json: &str) -> Result<Credentials, serde_json::Error> {
     serde_json::from_str(json)
 }
 
@@ -58,6 +63,25 @@ mod tests {
     #[test]
     fn config_from_json_rejects_invalid_json() {
         assert!(config_from_json("not json").is_err());
+    }
+
+    #[test]
+    fn credentials_from_json_parses_a_mechanism() {
+        let credentials =
+            credentials_from_json(r#"{"mechanism":"plain","username":"me","password":"pw"}"#)
+                .expect("a well-formed mechanism parses");
+        assert_eq!(
+            credentials,
+            Credentials::Plain {
+                username: "me".to_string(),
+                password: "pw".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn credentials_from_json_rejects_a_mechanism_that_does_not_exist() {
+        assert!(credentials_from_json(r#"{"mechanism":"not_a_real_mechanism"}"#).is_err());
     }
 
     #[test]

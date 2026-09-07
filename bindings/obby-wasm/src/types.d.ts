@@ -881,7 +881,7 @@ params: Array<string>, };
 /**
  * What to authenticate with.
  */
-export type SaslCredentials = { "Plain": { 
+export type SaslCredentials = { "mechanism": "plain", 
 /**
  * The account to log in as.
  */
@@ -889,7 +889,7 @@ username: string,
 /**
  * Its password.
  */
-password: string, } } | "External" | { "Scram": { 
+password: string, } | { "mechanism": "external" } | { "mechanism": "scram", 
 /**
  * The account to log in as.
  */
@@ -902,7 +902,7 @@ password: string,
  * Unpredictable bytes, never reused. The core has no entropy source, so the host supplies
  * this, and reusing one destroys the replay protection the mechanism exists for.
  */
-nonce: string, } };
+nonce: string, };
 
 /**
  * Why authentication ended without succeeding.

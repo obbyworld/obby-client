@@ -14,7 +14,7 @@ pip install obby-client
 ```python
 from obby_client import Client
 
-client = Client({"nick": "mynick"})
+client = Client("mynick")
 client.handle_connected()
 
 while (out := client.poll_transmit()) is not None:

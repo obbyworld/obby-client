@@ -5,7 +5,7 @@ import 'package:obby_client/obby_client.dart';
 import 'package:test/test.dart';
 
 void main() {
-  ObbyClient open() => ObbyClient({'nick': 'me'});
+  ObbyClient open() => ObbyClient(nick: 'me');
 
   test('only the nick is required to build a client', () {
     final client = open();

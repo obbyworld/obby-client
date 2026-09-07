@@ -27,6 +27,46 @@ enum TypingState {
   String get _wire => name;
 }
 
+/// SASL credentials for authenticating during registration.
+class SaslCredentials {
+  SaslCredentials._(this._json);
+
+  final Map<String, dynamic> _json;
+
+  /// `PLAIN`: a username and password sent in the clear. Only safe once the connection is over
+  /// TLS, since nothing else protects them.
+  factory SaslCredentials.plain({required String username, required String password}) {
+    return SaslCredentials._({
+      'mechanism': 'plain',
+      'username': username,
+      'password': password,
+    });
+  }
+
+  /// `EXTERNAL`: authenticates with the TLS client certificate already on the connection, so no
+  /// password is needed at all.
+  factory SaslCredentials.external() =>
+      SaslCredentials._({'mechanism': 'external'});
+
+  /// `SCRAM-SHA-256`: proves the password without ever putting it on the wire. Preferred over
+  /// [SaslCredentials.plain] wherever the server offers it.
+  factory SaslCredentials.scram({
+    required String username,
+    required String password,
+    required String nonce,
+  }) {
+    return SaslCredentials._({
+      'mechanism': 'scram',
+      'username': username,
+      'password': password,
+      'nonce': nonce,
+    });
+  }
+
+  /// The wire shape the engine's `Credentials` type expects.
+  Map<String, dynamic> toJson() => _json;
+}
+
 /// One connection.
 ///
 /// Call [close] when finished. The engine holds native memory that Dart's collector knows nothing
@@ -37,7 +77,7 @@ enum TypingState {
 /// isolate its own client.
 ///
 /// ```dart
-/// final client = ObbyClient({'nick': 'me'});
+/// final client = ObbyClient(nick: 'me');
 /// final socket = await Socket.connect('irc.libera.chat', 6667);
 /// client.handleConnected();
 ///
@@ -64,8 +104,33 @@ class ObbyClient {
 
   /// Open a connection's engine.
   ///
-  /// Only `nick` is required in [config]; every other field has a default.
-  factory ObbyClient(Map<String, dynamic> config, {String? libraryPath}) {
+  /// Only [nick] is required; the engine defaults everything else.
+  factory ObbyClient({
+    required String nick,
+    String? username,
+    String? realname,
+    String? password,
+    SaslCredentials? sasl,
+    int? retention,
+    List<String>? altNicks,
+    String? libraryPath,
+  }) {
+    return ObbyClient.fromConfig({
+      'nick': nick,
+      if (username != null) 'username': username,
+      if (realname != null) 'realname': realname,
+      if (password != null) 'password': password,
+      if (sasl != null) 'sasl': sasl,
+      if (retention != null) 'retention': retention,
+      if (altNicks != null) 'alt_nicks': altNicks,
+    }, libraryPath: libraryPath);
+  }
+
+  /// Open a connection's engine from a config map already in the wire shape.
+  ///
+  /// For a host that already has a config to hand, built or loaded some other way. Only `nick` is
+  /// required in [config]; every other field has a default.
+  factory ObbyClient.fromConfig(Map<String, dynamic> config, {String? libraryPath}) {
     final bindings = Bindings(_load(libraryPath));
     final json = jsonEncode(config).toNativeUtf8();
     try {

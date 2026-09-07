@@ -216,7 +216,7 @@ from obby_client import Client
 
 sock = socketlib.create_connection(("irc.example.org", 6667))
 
-client = Client({"nick": "mynick"})
+client = Client("mynick")
 client.handle_connected()
 
 while (out := client.poll_transmit()) is not None:
@@ -240,7 +240,7 @@ import 'package:obby_client/obby_client.dart';
 
 final socket = await Socket.connect('irc.example.org', 6667);
 
-final client = ObbyClient({'nick': 'mynick'});
+final client = ObbyClient(nick: 'mynick');
 client.handleConnected();
 
 socket.listen((data) {

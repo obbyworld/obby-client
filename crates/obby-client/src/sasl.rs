@@ -17,6 +17,7 @@ const CHUNK: usize = 400;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "ts", ts(rename = "SaslCredentials"))]
+#[cfg_attr(feature = "serde", serde(tag = "mechanism", rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Credentials {
     /// A username and password in the clear, so only over TLS.
