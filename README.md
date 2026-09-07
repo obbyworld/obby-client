@@ -43,16 +43,19 @@ One WebAssembly build serves both.
 npm install obby-client
 ```
 
-Every published version is on jsDelivr and unpkg the moment it reaches npm, with no account and no
-setup, so a page can load it without a build step. `init()` fetches the `.wasm` next to the module,
-which both CDNs serve:
+Every published version reaches jsDelivr and unpkg the moment it reaches npm, with no account and
+no setup, so a page loads it without a build step. An unversioned URL always serves the newest
+release, and `init()` fetches the `.wasm` next to the module, which both CDNs serve:
 
 ```html
 <script type="module">
-  import init, { ObbyClient } from "https://cdn.jsdelivr.net/npm/obby-client@0.1.1/obby_wasm.js";
+  import init, { ObbyClient } from "https://cdn.jsdelivr.net/npm/obby-client/obby_wasm.js";
   await init();
 </script>
 ```
+
+Pin a version for anything you ship, with `obby-client@0.1.2` in place of `obby-client`, so a
+release never changes under your users.
 
 </details>
 
