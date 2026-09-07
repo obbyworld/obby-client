@@ -33,7 +33,7 @@ void main() {
     expect(utf8.decode(client.pollTransmit()!), 'PONG abc\r\n');
   });
 
-  test('events drain as a batch and the model comes back as a map', () {
+  test('events drain as a batch and the model comes back typed', () {
     final client = open();
     addTearDown(client.close);
     client.handleBytes(
@@ -42,13 +42,18 @@ void main() {
 
     final events = client.pollEvents();
     expect(events, isNotEmpty);
-    expect(events.first['type'], 'registered');
+    final first = events.first;
+    expect(first, isA<ObbyEventRegistered>());
+    expect((first as ObbyEventRegistered).nick, 'me');
     expect(
       client.pollEvents(),
       isEmpty,
       reason: 'a drain takes everything, so the next call has nothing left',
     );
-    expect(client.model()['me'], isA<Map<String, dynamic>>());
+
+    final model = client.model();
+    expect(model.me.nick, 'me');
+    expect(model.channels, isEmpty);
   });
 
   test('a command goes out and a malformed one is refused', () {
@@ -104,19 +109,26 @@ void main() {
     );
   });
 
-  test('sendVoiceSignal takes the frame as a map', () {
+  test('sendVoiceSignal takes a typed frame', () {
     final client = open();
     addTearDown(client.close);
     while (client.pollTransmit() != null) {}
 
-    client.sendVoiceSignal('^general', {'type': 'join', 'channel': '^general'});
+    client.sendVoiceSignal('^general', const VoiceSignalJoin(channel: '^general'));
     expect(utf8.decode(client.pollTransmit()!), contains('TAGMSG ^general'));
-    client.sendVoiceSignal('^general', {'type': 'not_a_real_frame'});
-    expect(
-      client.pollTransmit(),
-      isNull,
-      reason: 'a frame the engine cannot read reaches the wire as nothing at all',
-    );
+  });
+
+  test('a frame the engine cannot read reaches the wire as nothing at all', () {
+    final client = open();
+    addTearDown(client.close);
+    while (client.pollTransmit() != null) {}
+
+    client.command({
+      'type': 'send_voice_signal',
+      'channel': '^general',
+      'signal': {'type': 'not_a_real_frame'},
+    });
+    expect(client.pollTransmit(), isNull);
   });
 
   test('quit sends a QUIT', () {

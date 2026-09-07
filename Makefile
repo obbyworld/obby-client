@@ -3,7 +3,7 @@
 # a Rust staticlib carries no dependencies of its own, so the platform's libraries come last
 FFI_SYSTEM_LIBS := $(if $(filter Darwin,$(shell uname -s)),-framework CoreFoundation -framework Security,-lpthread -ldl -lm)
 .PHONY: help install fix precommit check test live snap snap-accept doc lint fmt-check features wasm-check header msrv deny dupes machete \
-        wasm python dart c-smoke ts-types ts-check site standalone ci release-patch release-minor release-major
+        wasm python dart c-smoke ts-types types ts-check site standalone ci release-patch release-minor release-major
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -87,6 +87,9 @@ ts-types: ## regenerate the TypeScript definitions from the Rust types
 	cargo test -p obby-client --features ts export_bindings
 	cp crates/obby-client/bindings/obby.ts bindings/obby-wasm/src/types.d.ts
 	rm -rf crates/obby-client/bindings bindings/obby.ts
+
+types: ts-types ## regenerate the Python and Dart model types from the TypeScript definitions
+	python3 scripts/generate-model-types.py
 
 wasm: ## browser and bun package
 	wasm-pack build bindings/obby-wasm --target web --out-dir pkg

@@ -12,6 +12,7 @@ number, boolean and bigint. Anything outside that raises GeneratorError rather t
 a silent misparse would ship a wrong type to every host.
 """
 
+import keyword
 import re
 import sys
 from dataclasses import dataclass
@@ -438,13 +439,31 @@ def py_field_lines(fields: list[NamedField], indent: str = "    ") -> list[str]:
     return lines
 
 
+def _has_keyword_field(fields: list[NamedField]) -> bool:
+    return any(keyword.iskeyword(f.name) for f in fields)
+
+
+def _functional_typeddict(name: str, fields: list[NamedField]) -> str:
+    # a field like ModelChange's `from` is a Python keyword, so it cannot be a class-body
+    # attribute name; TypedDict's functional form takes it as a plain string key instead
+    items = ", ".join(f'"{f.name}": {py_type(f.type)}' for f in fields)
+    return f'{name} = TypedDict("{name}", {{{items}}})'
+
+
 def py_object_decl(decl: ObjectDecl) -> list[str]:
     required = [f for f in decl.fields if not f.optional]
     optional = [f for f in decl.fields if f.optional]
     if not optional:
+        if _has_keyword_field(decl.fields):
+            return [_functional_typeddict(decl.name, decl.fields)]
         lines = [f"class {decl.name}(TypedDict):"]
         lines += py_field_lines(decl.fields) or ["    pass"]
         return lines
+    if _has_keyword_field(decl.fields):
+        raise GeneratorError(
+            f"{decl.name} mixes optional fields with a Python-keyword field name, which the "
+            "functional TypedDict form cannot express as a total=False subclass"
+        )
     lines = [f"class _{decl.name}Required(TypedDict):"]
     lines += py_field_lines(required) or ["    pass"]
     lines.append("")
@@ -464,9 +483,13 @@ def py_union_decl(decl: UnionDecl) -> list[str]:
     for variant in decl.variants:
         cls = variant_class_name(decl.name, variant.tag)
         variant_names.append(cls)
-        lines.append(f"class {cls}(TypedDict):")
-        lines.append(f'    {decl.discriminant}: Literal["{variant.tag}"]')
-        lines += py_field_lines(variant.fields)
+        discriminant_field = NamedField(decl.discriminant, False, LiteralType(variant.tag), None)
+        all_fields = [discriminant_field, *variant.fields]
+        if _has_keyword_field(variant.fields):
+            lines.append(_functional_typeddict(cls, all_fields))
+        else:
+            lines.append(f"class {cls}(TypedDict):")
+            lines += py_field_lines(all_fields)
         lines.append("")
     lines.append(f"{decl.name} = Union[{', '.join(variant_names)}]")
     return lines
@@ -529,14 +552,17 @@ def update_pyi(decls: list) -> None:
 DART_OBJECT_NAMES: set[str] = set()  # populated once decls are known, for reference resolution
 DART_UNION_NAMES: set[str] = set()
 DART_ENUM_NAMES: set[str] = set()
-DART_ALIAS_TARGETS: dict[str, str] = {}
+# a name alias for Array<T> (only MessageTags), where the Dart typedef is transparent for type
+# annotations but decoding still has to rebuild the list: a JSON array cannot be reinterpreted as
+# a typed List with a cast the way a primitive alias like CaseFolded can.
+DART_ARRAY_ALIAS_ELEMENT: dict[str, object] = {}
 
 
 def dart_type(ref) -> str:
     if isinstance(ref, PrimitiveType):
         return {"string": "String", "number": "int", "boolean": "bool", "bigint": "int"}[ref.name]
     if isinstance(ref, ReferenceType):
-        return DART_ALIAS_TARGETS.get(ref.name, ref.name)
+        return ref.name
     if isinstance(ref, ArrayType):
         return f"List<{dart_type(ref.inner)}>"
     if isinstance(ref, OptionalType):
@@ -549,21 +575,22 @@ def dart_type(ref) -> str:
 
 def dart_decode_expr(ref, json_expr: str) -> str:
     """A Dart expression that reads `ref`'s value out of a `dynamic` json_expr."""
+    if isinstance(ref, OptionalType):
+        inner_expr = dart_decode_expr(ref.inner, json_expr)
+        return f"{json_expr} == null ? null : {inner_expr}"
     if isinstance(ref, PrimitiveType):
         return f"{json_expr} as {dart_type(ref)}"
     if isinstance(ref, ReferenceType):
         name = ref.name
+        if name in DART_ARRAY_ALIAS_ELEMENT:
+            return dart_decode_expr(ArrayType(DART_ARRAY_ALIAS_ELEMENT[name]), json_expr)
         if name in DART_ENUM_NAMES:
-            resolved = DART_ALIAS_TARGETS.get(name, name)
-            return f"{resolved}.fromWire({json_expr} as String)"
+            return f"{name}.fromWire({json_expr} as String)"
         if name in DART_OBJECT_NAMES or name in DART_UNION_NAMES:
-            resolved = DART_ALIAS_TARGETS.get(name, name)
-            return f"{resolved}.fromJson({json_expr} as Map<String, dynamic>)"
-        # a plain alias to a primitive, e.g. CaseFolded
+            return f"{name}.fromJson({json_expr} as Map<String, dynamic>)"
+        # a plain alias to a primitive, e.g. CaseFolded; the typedef is transparent, so a cast
+        # to it and a cast to what it aliases are the same operation
         return f"{json_expr} as {dart_type(ref)}"
-    if isinstance(ref, OptionalType):
-        inner_expr = dart_decode_expr(ref.inner, "v")
-        return f"({json_expr} == null ? null : (({json_expr}) as Object?).let((v) => {inner_expr}))"
     if isinstance(ref, ArrayType):
         inner_expr = dart_decode_expr(ref.inner, "e")
         return f"({json_expr} as List).map((e) => {inner_expr}).toList()"
@@ -573,13 +600,46 @@ def dart_decode_expr(ref, json_expr: str) -> str:
     raise GeneratorError(f"no Dart decode expression for {ref!r}")
 
 
-# `let` is not a real Dart extension; OptionalType decoding is special-cased below instead of
-# going through the generic path above, which would need it.
-def dart_field_decode(field_name: str, ref, json_expr: str) -> str:
+def dart_encode_expr(ref, value_expr: str, nullable: bool = False) -> str:
+    """A Dart expression that turns a value typed `ref` back into something `jsonEncode` accepts
+    directly, the inverse of `dart_decode_expr`. Needed wherever a generated type is also built by
+    a host to send outbound, such as `VoiceSignal` for `sendVoiceSignal`.
+
+    `nullable` picks `?.` over `.` for the access directly on `value_expr`: a null check can only
+    promote a local variable or a private field, never a public one (an override could return a
+    different value on a second read), so a plain `== null ? null : value_expr.foo()` does not
+    type-check on the public fields these classes declare. Dart's null-shorting means only that
+    first access needs the `?`; every further `.` chained onto the same expression already short
+    -circuits with it.
+    """
+    op = "?." if nullable else "."
     if isinstance(ref, OptionalType):
-        inner_expr = dart_decode_expr(ref.inner, json_expr)
-        return f"{json_expr} == null ? null : {inner_expr}"
-    return dart_decode_expr(ref, json_expr)
+        return dart_encode_expr(ref.inner, value_expr, nullable=True)
+    if isinstance(ref, PrimitiveType):
+        return value_expr
+    if isinstance(ref, ReferenceType):
+        name = ref.name
+        if name in DART_ARRAY_ALIAS_ELEMENT:
+            return dart_encode_expr(ArrayType(DART_ARRAY_ALIAS_ELEMENT[name]), value_expr, nullable)
+        if name in DART_ENUM_NAMES:
+            return f"{value_expr}{op}wire"
+        if name in DART_OBJECT_NAMES or name in DART_UNION_NAMES:
+            return f"{value_expr}{op}toJson()"
+        return value_expr
+    if isinstance(ref, ArrayType):
+        inner_expr = dart_encode_expr(ref.inner, "e")
+        return f"{value_expr}{op}map((e) => {inner_expr}).toList()"
+    if isinstance(ref, RecordType):
+        value_expr2 = dart_encode_expr(ref.value, "v")
+        return f"{value_expr}{op}map((k, v) => MapEntry(k, {value_expr2}))"
+    raise GeneratorError(f"no Dart encode expression for {ref!r}")
+
+
+def _effective(field: NamedField):
+    """A field marked optional may be absent from the JSON entirely, which reads back as Dart
+    `null` from a plain map index, so its type and decode both have to be nullable regardless of
+    what the TypeScript field type itself says."""
+    return OptionalType(field.type) if field.optional else field.type
 
 
 def dart_doc(doc: str | None, indent: str = "") -> list[str]:
@@ -600,13 +660,19 @@ def dart_object_decl(decl: ObjectDecl) -> list[str]:
     lines.append(f"  factory {decl.name}.fromJson(Map<String, dynamic> json) => {decl.name}(")
     for field in decl.fields:
         json_expr = f"json['{field.name}']"
-        decode = dart_field_decode(field.name, field.type, json_expr)
+        decode = dart_decode_expr(_effective(field), json_expr)
         lines.append(f"    {field.name}: {decode},")
     lines.append("  );")
     lines.append("")
+    lines.append("  Map<String, dynamic> toJson() => {")
+    for field in decl.fields:
+        encode = dart_encode_expr(_effective(field), field.name)
+        lines.append(f"    '{field.name}': {encode},")
+    lines.append("  };")
+    lines.append("")
     for field in decl.fields:
         lines += dart_doc(field.doc, "  ")
-        lines.append(f"  final {dart_type(field.type)} {field.name};")
+        lines.append(f"  final {dart_type(_effective(field))} {field.name};")
         lines.append("")
     while lines[-1] == "":
         lines.pop()
@@ -617,8 +683,11 @@ def dart_object_decl(decl: ObjectDecl) -> list[str]:
 def dart_string_union_decl(decl: StringUnionDecl) -> list[str]:
     lines = dart_doc(decl.doc)
     lines.append(f"enum {decl.name} {{")
-    for variant in decl.variants:
-        lines.append(f"  {variant},")
+    # an enhanced enum needs a `;` closing the value list before any member, not just a trailing
+    # comma, so the last value's terminator differs from the rest
+    for i, variant in enumerate(decl.variants):
+        terminator = ";" if i == len(decl.variants) - 1 else ","
+        lines.append(f"  {variant}{terminator}")
     lines.append("")
     lines.append(f"  static {decl.name} fromWire(String wire) => {decl.name}.values.byName(wire);")
     lines.append("")
@@ -631,6 +700,8 @@ def dart_union_decl(decl: UnionDecl) -> list[str]:
     lines = dart_doc(decl.doc)
     lines.append(f"sealed class {decl.name} {{")
     lines.append(f"  const {decl.name}();")
+    lines.append("")
+    lines.append("  Map<String, dynamic> toJson();")
     lines.append("")
     lines.append(f"  factory {decl.name}.fromJson(Map<String, dynamic> json) {{")
     lines.append(f"    final tag = json['{decl.discriminant}'] as String;")
@@ -651,6 +722,16 @@ def dart_union_decl(decl: UnionDecl) -> list[str]:
         cls = variant_class_name(decl.name, variant.tag)
         lines += dart_doc(variant.doc)
         lines.append(f"class {cls} extends {decl.name} {{")
+        if not variant.fields:
+            lines.append(f"  const {cls}();")
+            lines.append("")
+            lines.append(f"  factory {cls}.fromJson(Map<String, dynamic> json) => const {cls}();")
+            lines.append("")
+            lines.append("  @override")
+            lines.append(f"  Map<String, dynamic> toJson() => {{'{decl.discriminant}': '{variant.tag}'}};")
+            lines.append("}")
+            lines.append("")
+            continue
         lines.append(f"  const {cls}({{")
         for field in variant.fields:
             required = "" if field.optional else "required "
@@ -660,13 +741,21 @@ def dart_union_decl(decl: UnionDecl) -> list[str]:
         lines.append(f"  factory {cls}.fromJson(Map<String, dynamic> json) => {cls}(")
         for field in variant.fields:
             json_expr = f"json['{field.name}']"
-            decode = dart_field_decode(field.name, field.type, json_expr)
+            decode = dart_decode_expr(_effective(field), json_expr)
             lines.append(f"    {field.name}: {decode},")
         lines.append("  );")
         lines.append("")
+        lines.append("  @override")
+        lines.append("  Map<String, dynamic> toJson() => {")
+        lines.append(f"    '{decl.discriminant}': '{variant.tag}',")
+        for field in variant.fields:
+            encode = dart_encode_expr(_effective(field), field.name)
+            lines.append(f"    '{field.name}': {encode},")
+        lines.append("  };")
+        lines.append("")
         for field in variant.fields:
             lines += dart_doc(field.doc, "  ")
-            lines.append(f"  final {dart_type(field.type)} {field.name};")
+            lines.append(f"  final {dart_type(_effective(field))} {field.name};")
             lines.append("")
         while lines[-1] == "":
             lines.pop()
@@ -697,12 +786,17 @@ def render_dart_model(decls: list) -> str:
             DART_UNION_NAMES.add(decl.name)
         elif isinstance(decl, StringUnionDecl):
             DART_ENUM_NAMES.add(decl.name)
-        elif isinstance(decl, AliasDecl) and isinstance(decl.target, PrimitiveType):
-            DART_ALIAS_TARGETS[decl.name] = dart_type(decl.target)
+        elif isinstance(decl, AliasDecl) and isinstance(decl.target, ArrayType):
+            DART_ARRAY_ALIAS_ELEMENT[decl.name] = decl.target.inner
 
     lines = [
         "// Generated by scripts/generate-model-types.py from bindings/obby-wasm/src/types.d.ts.",
         "// Do not edit by hand.",
+        "//",
+        "// Field names mirror the wire's snake_case rather than being recased to lowerCamelCase, so",
+        "// this file keeps its own naming and null-check style rather than the package's.",
+        "// ignore_for_file: non_constant_identifier_names, constant_identifier_names",
+        "// ignore_for_file: prefer_if_null_operators, prefer_null_aware_operators",
         "library;",
         "",
     ]

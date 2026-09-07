@@ -366,7 +366,9 @@ impl Client {
 
     /// Everything the connection knows: channels, members, conversations and messages. For a host
     /// that only wants the model, not a diff of what changed.
-    #[getter]
+    ///
+    /// A call rather than a property, because it serialises the whole model, and an attribute
+    /// would hide that cost from a caller reading two fields in a row.
     fn model(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let inner = &self.inner;
         let json = py

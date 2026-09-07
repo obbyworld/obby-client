@@ -12,31 +12,24 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import 'src/bindings.dart';
+import 'src/model.dart';
 
-/// How far along a composed message is.
-enum TypingState {
-  /// Typing right now.
-  active,
+export 'src/model.dart';
 
-  /// Stopped, with text still in the box.
-  paused,
-
-  /// Stopped, with the box empty.
-  done;
-
-  String get _wire => name;
-}
-
-/// SASL credentials for authenticating during registration.
-class SaslCredentials {
-  SaslCredentials._(this._json);
+/// SASL credentials for authenticating during registration, built by a host to hand to
+/// [ObbyClient.new] or [ObbyClient.fromConfig].
+///
+/// Distinct from the generated [SaslCredentials], which decodes the same wire shape coming back
+/// out of a [Config] a host reads, rather than building one to send.
+class SaslCredentialsInput {
+  SaslCredentialsInput._(this._json);
 
   final Map<String, dynamic> _json;
 
   /// `PLAIN`: a username and password sent in the clear. Only safe once the connection is over
   /// TLS, since nothing else protects them.
-  factory SaslCredentials.plain({required String username, required String password}) {
-    return SaslCredentials._({
+  factory SaslCredentialsInput.plain({required String username, required String password}) {
+    return SaslCredentialsInput._({
       'mechanism': 'plain',
       'username': username,
       'password': password,
@@ -45,17 +38,17 @@ class SaslCredentials {
 
   /// `EXTERNAL`: authenticates with the TLS client certificate already on the connection, so no
   /// password is needed at all.
-  factory SaslCredentials.external() =>
-      SaslCredentials._({'mechanism': 'external'});
+  factory SaslCredentialsInput.external() =>
+      SaslCredentialsInput._({'mechanism': 'external'});
 
   /// `SCRAM-SHA-256`: proves the password without ever putting it on the wire. Preferred over
-  /// [SaslCredentials.plain] wherever the server offers it.
-  factory SaslCredentials.scram({
+  /// [SaslCredentialsInput.plain] wherever the server offers it.
+  factory SaslCredentialsInput.scram({
     required String username,
     required String password,
     required String nonce,
   }) {
-    return SaslCredentials._({
+    return SaslCredentialsInput._({
       'mechanism': 'scram',
       'username': username,
       'password': password,
@@ -110,7 +103,7 @@ class ObbyClient {
     String? username,
     String? realname,
     String? password,
-    SaslCredentials? sasl,
+    SaslCredentialsInput? sasl,
     int? retention,
     List<String>? altNicks,
     String? libraryPath,
@@ -208,26 +201,33 @@ class ObbyClient {
     return copy;
   }
 
-  /// Every event queued since the last call.
+  /// Every event queued since the last call, as the typed [ObbyEvent].
   ///
   /// One crossing per drain rather than one per event, because a call over this boundary costs the
   /// same whether it carries one event or a hundred.
   ///
-  /// An event's `type` names it, in `snake_case`, and the rest of the map is that event's fields.
-  ///
   /// ```dart
   /// for (final event in client.pollEvents()) {
-  ///   switch (event['type']) {
-  ///     case 'registered':
-  ///       print('registered as ${event['nick']}');
-  ///     case 'model_changed':
-  ///       print(event['change']);
-  ///     case 'server_reply':
-  ///       print('${event['severity']} ${event['code']} ${event['text']}');
+  ///   switch (event) {
+  ///     case ObbyEventRegistered(:final nick):
+  ///       print('registered as $nick');
+  ///     case ObbyEventModelChanged(:final change):
+  ///       print(change);
+  ///     case ObbyEventServerReply(:final severity, :final code, :final text):
+  ///       print('${severity.wire} $code $text');
+  ///     default:
+  ///       break;
   ///   }
   /// }
   /// ```
-  List<Map<String, dynamic>> pollEvents() {
+  List<ObbyEvent> pollEvents() =>
+      pollEventsJson().map(ObbyEvent.fromJson).toList();
+
+  /// Every event queued since the last call, as the raw wire map, for a host that wants the
+  /// escape hatch rather than the typed [pollEvents].
+  ///
+  /// An event's `type` names it, in `snake_case`, and the rest of the map is that event's fields.
+  List<Map<String, dynamic>> pollEventsJson() {
     _alive();
     final decoded = _takeString(_bindings.pollEvents(_handle));
     if (decoded == null) {
@@ -241,7 +241,11 @@ class ObbyClient {
   }
 
   /// Everything the connection knows: channels, members, conversations, messages.
-  Map<String, dynamic> model() {
+  Model model() => Model.fromJson(modelJson());
+
+  /// Everything the connection knows, as the raw wire map, for a host that wants the escape
+  /// hatch rather than the typed [model].
+  Map<String, dynamic> modelJson() {
     _alive();
     final decoded = _takeString(_bindings.modelJson(_handle));
     if (decoded == null) {
@@ -351,7 +355,7 @@ class ObbyClient {
   /// Say we are typing, so others can show it.
   void setTyping(String target, TypingState state) {
     _alive();
-    command({'type': 'set_typing', 'target': target, 'state': state._wire});
+    command({'type': 'set_typing', 'target': target, 'state': state.wire});
   }
 
   /// React to a message with an emoji.
@@ -424,12 +428,12 @@ class ObbyClient {
   ///
   /// The frame is the caller's to build: everything in it comes from a media stack the engine
   /// deliberately knows nothing about.
-  void sendVoiceSignal(String channel, Map<String, dynamic> signal) {
+  void sendVoiceSignal(String channel, VoiceSignal signal) {
     _alive();
     command({
       'type': 'send_voice_signal',
       'channel': channel,
-      'signal': signal,
+      'signal': signal.toJson(),
     });
   }
 
