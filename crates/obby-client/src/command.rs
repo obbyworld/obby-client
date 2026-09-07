@@ -52,52 +52,52 @@ pub enum Command {
         reason: Option<String>,
     },
     /// Say something to a channel or a person.
-    Message {
+    SendMessage {
         /// Where to say it.
         target: String,
         /// What to say.
         text: String,
     },
     /// Send a notice, which by convention must never be auto-replied to.
-    Notice {
+    SendNotice {
         /// Where to send it.
         target: String,
         /// What to send.
         text: String,
     },
     /// Send a `CTCP ACTION`, the third-person form.
-    Action {
+    SendAction {
         /// Where to send it.
         target: String,
         /// What we are doing.
         text: String,
     },
     /// Change our nick.
-    Nick {
+    SetNick {
         /// The nick to take.
         nick: String,
     },
     /// Set or clear a channel topic.
-    Topic {
+    SetTopic {
         /// The channel.
         channel: String,
         /// The new topic, or nothing to clear it.
         topic: Option<String>,
     },
     /// Mark ourselves away, or come back.
-    Away {
+    SetAway {
         /// The away message, or nothing to come back.
         message: Option<String>,
     },
     /// Say we are typing, so others can show it.
-    Typing {
+    SetTyping {
         /// Who we are typing to.
         target: String,
         /// How far along we are.
         state: Typing,
     },
     /// React to a message with an emoji.
-    React {
+    AddReaction {
         /// The channel or person the message is in.
         target: String,
         /// The message reacted to.
@@ -106,7 +106,7 @@ pub enum Command {
         emoji: String,
     },
     /// Take a reaction back.
-    Unreact {
+    RemoveReaction {
         /// The channel or person the message is in.
         target: String,
         /// The message.
@@ -115,7 +115,7 @@ pub enum Command {
         emoji: String,
     },
     /// Ask the server to delete a message.
-    Redact {
+    RedactMessage {
         /// Where the message is.
         target: String,
         /// The message to delete.
@@ -133,7 +133,7 @@ pub enum Command {
     /// Ask for older messages than the ones we hold.
     ///
     /// With no `before`, this asks for the most recent, which is what a fresh window wants.
-    History {
+    FetchHistory {
         /// The channel or person.
         target: String,
         /// Fetch messages older than this one.
@@ -154,12 +154,12 @@ pub enum Command {
         keys: alloc::vec::Vec<String>,
     },
     /// Watch these nicks, so the server says when they come and go.
-    Watch {
+    WatchNicks {
         /// The nicks to watch.
         nicks: alloc::vec::Vec<String>,
     },
     /// Stop watching these nicks.
-    Unwatch {
+    UnwatchNicks {
         /// The nicks to stop watching.
         nicks: alloc::vec::Vec<String>,
     },
@@ -168,11 +168,11 @@ pub enum Command {
     /// The frame is the host's to build, because everything in it comes from the media stack the
     /// core deliberately knows nothing about.
     #[cfg(feature = "voice")]
-    Voice {
+    SendVoiceSignal {
         /// The channel to signal in.
         channel: String,
         /// The frame, already encoded as the JSON that travels in the tag.
-        payload: String,
+        signal_json: String,
     },
     /// Leave the network.
     Quit {
@@ -180,7 +180,7 @@ pub enum Command {
         reason: Option<String>,
     },
     /// Send a line we do not model. The escape hatch, so a host is never stuck waiting for us.
-    Raw {
+    SendRawLine {
         /// The line, without its terminator.
         line: String,
     },

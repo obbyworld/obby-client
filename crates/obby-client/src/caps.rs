@@ -92,7 +92,7 @@ pub struct Capability {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "ts", ts(rename = "Capabilities"))]
-pub struct Caps {
+pub struct Capabilities {
     available: BTreeMap<String, Option<String>>,
     acknowledged: BTreeMap<String, Option<String>>,
     /// Capabilities we asked for and are still waiting on. Registration cannot finish while this is
@@ -100,7 +100,7 @@ pub struct Caps {
     pending: Vec<String>,
 }
 
-impl Caps {
+impl Capabilities {
     /// Record one `CAP LS` or `CAP NEW` line's worth of advertisements.
     pub fn advertise(&mut self, list: &str) {
         for token in list.split_whitespace() {
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn requests_only_what_is_offered_and_wanted() {
-        let mut caps = Caps::default();
+        let mut caps = Capabilities::default();
         caps.advertise("multi-prefix sasl=PLAIN,EXTERNAL something-we-never-want");
         let request = caps.to_request();
         assert!(request.contains(&"multi-prefix".to_string()));
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn keeps_the_value_of_an_acknowledged_capability() {
-        let mut caps = Caps::default();
+        let mut caps = Capabilities::default();
         caps.advertise("sasl=PLAIN,EXTERNAL");
         caps.requested(&["sasl".to_string()]);
         caps.acknowledge("sasl=PLAIN,EXTERNAL");
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn an_ack_without_a_value_keeps_the_advertised_one() {
-        let mut caps = Caps::default();
+        let mut caps = Capabilities::default();
         caps.advertise("sasl=PLAIN,EXTERNAL");
         caps.requested(&["sasl".to_string()]);
         caps.acknowledge("sasl");
@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn is_not_settled_until_every_request_is_answered() {
-        let mut caps = Caps::default();
+        let mut caps = Capabilities::default();
         caps.advertise("multi-prefix away-notify");
         let request = caps.to_request();
         caps.requested(&request);
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn a_negated_ack_drops_the_capability() {
-        let mut caps = Caps::default();
+        let mut caps = Capabilities::default();
         caps.advertise("echo-message");
         caps.requested(&["echo-message".to_string()]);
         caps.acknowledge("echo-message");
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn cap_del_removes_an_offer_and_the_hold() {
-        let mut caps = Caps::default();
+        let mut caps = Capabilities::default();
         caps.advertise("away-notify");
         caps.requested(&["away-notify".to_string()]);
         caps.acknowledge("away-notify");
@@ -272,7 +272,7 @@ mod tests {
 
     #[test]
     fn does_not_re_request_what_is_already_held() {
-        let mut caps = Caps::default();
+        let mut caps = Capabilities::default();
         caps.advertise("multi-prefix");
         caps.requested(&["multi-prefix".to_string()]);
         caps.acknowledge("multi-prefix");

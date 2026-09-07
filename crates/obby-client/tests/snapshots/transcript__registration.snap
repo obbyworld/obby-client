@@ -24,14 +24,14 @@ casemapping: Rfc1459
 == channels ==
 
 == events ==
-CapAcknowledged { names: ["multi-prefix"] }
-CapAcknowledged { names: ["server-time"] }
-CapAcknowledged { names: ["message-tags"] }
-CapAcknowledged { names: ["batch"] }
-CapAcknowledged { names: ["echo-message"] }
-CapAcknowledged { names: ["away-notify"] }
+CapabilitiesAcknowledged { names: ["multi-prefix"] }
+CapabilitiesAcknowledged { names: ["server-time"] }
+CapabilitiesAcknowledged { names: ["message-tags"] }
+CapabilitiesAcknowledged { names: ["batch"] }
+CapabilitiesAcknowledged { names: ["echo-message"] }
+CapabilitiesAcknowledged { names: ["away-notify"] }
 Registered { nick: "me" }
-Isupport { token: "CASEMAPPING", value: Some("rfc1459") }
-Isupport { token: "CHANTYPES", value: Some("#^$") }
-Isupport { token: "PREFIX", value: Some("(qaohv)~&@%+") }
-Isupport { token: "CHANMODES", value: Some("beI,k,l,imnpst") }
+IsupportToken { token: "CASEMAPPING", value: Some("rfc1459") }
+IsupportToken { token: "CHANTYPES", value: Some("#^$") }
+IsupportToken { token: "PREFIX", value: Some("(qaohv)~&@%+") }
+IsupportToken { token: "CHANMODES", value: Some("beI,k,l,imnpst") }

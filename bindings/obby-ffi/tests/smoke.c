@@ -48,6 +48,19 @@ int main(void) {
     assert(obby_client_send_message(client, "#obby", "hello from C"));
     expect_sent(client, "PRIVMSG #obby :hello from C");
 
+    assert(obby_client_set_typing(client, "#obby", "active"));
+    expect_sent(client, "+typing=active");
+
+    assert(obby_client_add_reaction(client, "#obby", "msg123", "\xf0\x9f\x91\x8d"));
+    expect_sent(client, "TAGMSG #obby");
+
+    assert(obby_client_fetch_history(client, "#obby", NULL, 50));
+    expect_sent(client, "CHATHISTORY LATEST #obby * 50");
+
+    const char *nicks[] = {"alice", "bob"};
+    assert(obby_client_watch_nicks(client, nicks, 2));
+    expect_sent(client, "MONITOR + alice,bob");
+
     assert(obby_client_quit(client, "bye"));
     expect_sent(client, "QUIT bye");
 

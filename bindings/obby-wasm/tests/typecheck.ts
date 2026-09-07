@@ -12,9 +12,16 @@ const client = new ObbyClient({ nick: "typed", retention: 200 });
 
 client.handleConnected();
 
+// every command is a method, with the arguments it actually takes
+client.join("#obby");
+client.sendMessage("#obby", "hello");
+client.setTyping("#obby", "active");
+client.fetchHistory("#obby", null, 50);
+client.watchNicks(["alice", "bob"]);
+
+// and the generic form stays, for a command a host builds itself
 const join: Command = { type: "join", channel: "#obby", key: null };
 client.command(join);
-client.command({ type: "message", target: "#obby", text: "hello" });
 
 const events: ObbyEvent[] = client.pollEvents();
 for (const event of events) {
@@ -22,12 +29,12 @@ for (const event of events) {
     case "registered":
       console.log(event.nick);
       break;
-    case "changed":
-      if (event.change.type === "message") {
+    case "model_changed":
+      if (event.change.type === "message_added") {
         console.log(event.change.target, event.change.key.seq);
       }
       break;
-    case "reply":
+    case "server_reply":
       console.log(event.severity, event.code, event.text);
       break;
     default:

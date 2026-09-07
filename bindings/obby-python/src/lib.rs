@@ -20,7 +20,7 @@
 //! produces, which is far less code than a hand-written `serde_json::Value` to `PyObject` walker
 //! and just as correct.
 
-use ::obby_client::{Client as CoreClient, Now};
+use ::obby_client::{Client as CoreClient, Command, Now, Typing};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
@@ -95,6 +95,152 @@ impl Client {
         let inner = &mut self.inner;
         py.detach(move || inner.command(command));
         Ok(())
+    }
+
+    /// Join a channel.
+    #[pyo3(signature = (channel, key=None))]
+    fn join(&mut self, channel: String, key: Option<String>) {
+        self.inner.command(Command::Join { channel, key });
+    }
+
+    /// Leave a channel.
+    #[pyo3(signature = (channel, reason=None))]
+    fn part(&mut self, channel: String, reason: Option<String>) {
+        self.inner.command(Command::Part { channel, reason });
+    }
+
+    /// Say something to a channel or a person.
+    fn send_message(&mut self, target: String, text: String) {
+        self.inner.command(Command::SendMessage { target, text });
+    }
+
+    /// Send a notice, which by convention must never be auto-replied to.
+    fn send_notice(&mut self, target: String, text: String) {
+        self.inner.command(Command::SendNotice { target, text });
+    }
+
+    /// Send a `CTCP ACTION`, the third-person form.
+    fn send_action(&mut self, target: String, text: String) {
+        self.inner.command(Command::SendAction { target, text });
+    }
+
+    /// Change our nick.
+    fn set_nick(&mut self, nick: String) {
+        self.inner.command(Command::SetNick { nick });
+    }
+
+    /// Set or clear a channel topic.
+    #[pyo3(signature = (channel, topic=None))]
+    fn set_topic(&mut self, channel: String, topic: Option<String>) {
+        self.inner.command(Command::SetTopic { channel, topic });
+    }
+
+    /// Mark ourselves away, or come back.
+    #[pyo3(signature = (message=None))]
+    fn set_away(&mut self, message: Option<String>) {
+        self.inner.command(Command::SetAway { message });
+    }
+
+    /// Say we are typing, so others can show it. `state` is one of `"active"`, `"paused"`,
+    /// `"done"`.
+    fn set_typing(&mut self, target: String, state: &str) -> PyResult<()> {
+        let state = match state {
+            "active" => Typing::Active,
+            "paused" => Typing::Paused,
+            "done" => Typing::Done,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "invalid typing state: {other:?}, expected active, paused or done"
+                )));
+            }
+        };
+        self.inner.command(Command::SetTyping { target, state });
+        Ok(())
+    }
+
+    /// React to a message with an emoji.
+    fn add_reaction(&mut self, target: String, msgid: String, emoji: String) {
+        self.inner.command(Command::AddReaction {
+            target,
+            msgid,
+            emoji,
+        });
+    }
+
+    /// Take a reaction back.
+    fn remove_reaction(&mut self, target: String, msgid: String, emoji: String) {
+        self.inner.command(Command::RemoveReaction {
+            target,
+            msgid,
+            emoji,
+        });
+    }
+
+    /// Ask the server to delete a message.
+    #[pyo3(signature = (target, msgid, reason=None))]
+    fn redact_message(&mut self, target: String, msgid: String, reason: Option<String>) {
+        self.inner.command(Command::RedactMessage {
+            target,
+            msgid,
+            reason,
+        });
+    }
+
+    /// Tell the server how far we have read.
+    fn mark_read(&mut self, target: String, timestamp: String) {
+        self.inner.command(Command::MarkRead { target, timestamp });
+    }
+
+    /// Ask for older messages than the ones we hold. With no `before`, this asks for the most
+    /// recent, which is what a fresh window wants.
+    #[pyo3(signature = (target, before=None, limit=50))]
+    fn fetch_history(&mut self, target: String, before: Option<String>, limit: u16) {
+        self.inner.command(Command::FetchHistory {
+            target,
+            before,
+            limit,
+        });
+    }
+
+    /// Set one of our own metadata keys, or clear it.
+    #[pyo3(signature = (key, value=None))]
+    fn set_metadata(&mut self, key: String, value: Option<String>) {
+        self.inner.command(Command::SetMetadata { key, value });
+    }
+
+    /// Ask to be told when these metadata keys change on anyone we can see.
+    fn subscribe_metadata(&mut self, keys: Vec<String>) {
+        self.inner.command(Command::SubscribeMetadata { keys });
+    }
+
+    /// Watch these nicks, so the server says when they come and go.
+    fn watch_nicks(&mut self, nicks: Vec<String>) {
+        self.inner.command(Command::WatchNicks { nicks });
+    }
+
+    /// Stop watching these nicks.
+    fn unwatch_nicks(&mut self, nicks: Vec<String>) {
+        self.inner.command(Command::UnwatchNicks { nicks });
+    }
+
+    /// Send a voice signalling frame to a room. The frame is the host's to build: everything in
+    /// it comes from the media stack the core deliberately knows nothing about.
+    fn send_voice_signal(&mut self, channel: String, signal_json: String) {
+        self.inner.command(Command::SendVoiceSignal {
+            channel,
+            signal_json,
+        });
+    }
+
+    /// Leave the network.
+    #[pyo3(signature = (reason=None))]
+    fn quit(&mut self, reason: Option<String>) {
+        self.inner.command(Command::Quit { reason });
+    }
+
+    /// Send a line we do not model. The escape hatch, so a host is never stuck waiting for us.
+    fn send_raw_line(&mut self, line: String) {
+        self.inner.command(Command::SendRawLine { line });
     }
 
     /// Feed whatever the transport read. Partial lines are held until the rest arrives.

@@ -23,7 +23,6 @@ pub const DEFAULT_RETENTION: usize = 5000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
-#[cfg_attr(feature = "ts", ts(rename = "MessageOrder"))]
 pub struct MessageKey {
     /// Milliseconds since the epoch, from `server-time` when the server sent one.
     #[cfg_attr(feature = "ts", ts(type = "number"))]
@@ -78,7 +77,7 @@ pub enum MessageKind {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "ts", ts(rename = "ChatMessage"))]
-pub struct Message {
+pub struct ChatMessage {
     /// Where it sits in the log.
     pub key: MessageKey,
     /// The network-unique id, when the server assigned one.
@@ -110,7 +109,7 @@ pub struct Message {
     pub redacted: bool,
 }
 
-impl Message {
+impl ChatMessage {
     /// A message with only what every kind carries.
     pub fn new(key: MessageKey, sender: impl Into<String>, kind: MessageKind) -> Self {
         Self {
@@ -136,10 +135,10 @@ impl Message {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "ts", ts(rename = "MessageLog"))]
-pub struct Log {
+pub struct MessageLog {
     #[cfg_attr(feature = "serde", serde(with = "messages_as_list"))]
-    #[cfg_attr(feature = "ts", ts(as = "Vec<Message>"))]
-    messages: BTreeMap<MessageKey, Message>,
+    #[cfg_attr(feature = "ts", ts(as = "Vec<ChatMessage>"))]
+    messages: BTreeMap<MessageKey, ChatMessage>,
     by_msgid: BTreeMap<String, MessageKey>,
     retention: usize,
 }
@@ -151,12 +150,12 @@ pub struct Log {
 /// anything. Each message already carries its own key, so the map rebuilds from the list exactly.
 #[cfg(feature = "serde")]
 mod messages_as_list {
-    use super::{BTreeMap, Message, MessageKey};
+    use super::{BTreeMap, ChatMessage, MessageKey};
     use alloc::vec::Vec;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub(super) fn serialize<S: Serializer>(
-        messages: &BTreeMap<MessageKey, Message>,
+        messages: &BTreeMap<MessageKey, ChatMessage>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         messages.values().collect::<Vec<_>>().serialize(serializer)
@@ -164,21 +163,21 @@ mod messages_as_list {
 
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<BTreeMap<MessageKey, Message>, D::Error> {
-        Ok(Vec::<Message>::deserialize(deserializer)?
+    ) -> Result<BTreeMap<MessageKey, ChatMessage>, D::Error> {
+        Ok(Vec::<ChatMessage>::deserialize(deserializer)?
             .into_iter()
             .map(|message| (message.key, message))
             .collect())
     }
 }
 
-impl Default for Log {
+impl Default for MessageLog {
     fn default() -> Self {
         Self::with_retention(DEFAULT_RETENTION)
     }
 }
 
-impl Log {
+impl MessageLog {
     /// An empty log holding at most this many messages.
     pub fn with_retention(retention: usize) -> Self {
         Self {
@@ -193,7 +192,7 @@ impl Log {
     /// A message with an id is deduplicated by that id. One without is compared against the
     /// messages sharing its exact timestamp, which is enough to catch a replay while staying
     /// bounded: an unbounded content scan would be the only alternative.
-    pub fn insert(&mut self, message: Message) -> bool {
+    pub fn insert(&mut self, message: ChatMessage) -> bool {
         if let Some(msgid) = &message.msgid {
             if self.by_msgid.contains_key(msgid) {
                 return false;
@@ -209,7 +208,7 @@ impl Log {
         true
     }
 
-    fn has_twin(&self, candidate: &Message) -> bool {
+    fn has_twin(&self, candidate: &ChatMessage) -> bool {
         let same_instant = MessageKey {
             time_ms: candidate.key.time_ms,
             seq: 0,
@@ -241,28 +240,28 @@ impl Log {
     }
 
     /// Look one up by its network id.
-    pub fn get(&self, msgid: &str) -> Option<&Message> {
+    pub fn get(&self, msgid: &str) -> Option<&ChatMessage> {
         self.messages.get(self.by_msgid.get(msgid)?)
     }
 
     /// Borrow one mutably by its network id, to attach a reaction or mark it redacted.
-    pub fn get_mut(&mut self, msgid: &str) -> Option<&mut Message> {
+    pub fn get_mut(&mut self, msgid: &str) -> Option<&mut ChatMessage> {
         let key = *self.by_msgid.get(msgid)?;
         self.messages.get_mut(&key)
     }
 
     /// Every message, oldest first.
-    pub fn iter(&self) -> btree_map::Values<'_, MessageKey, Message> {
+    pub fn iter(&self) -> btree_map::Values<'_, MessageKey, ChatMessage> {
         self.messages.values()
     }
 
     /// The most recent message.
-    pub fn last(&self) -> Option<&Message> {
+    pub fn last(&self) -> Option<&ChatMessage> {
         self.messages.last_key_value().map(|(_, message)| message)
     }
 
     /// The oldest message held, which is where a history request should resume from.
-    pub fn first(&self) -> Option<&Message> {
+    pub fn first(&self) -> Option<&ChatMessage> {
         self.messages.first_key_value().map(|(_, message)| message)
     }
 
@@ -277,9 +276,9 @@ impl Log {
     }
 }
 
-impl<'a> IntoIterator for &'a Log {
-    type Item = &'a Message;
-    type IntoIter = btree_map::Values<'a, MessageKey, Message>;
+impl<'a> IntoIterator for &'a MessageLog {
+    type Item = &'a ChatMessage;
+    type IntoIter = btree_map::Values<'a, MessageKey, ChatMessage>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -366,7 +365,7 @@ pub struct Channel {
     /// Who is in it.
     pub members: BTreeMap<CaseFolded, Membership>,
     /// What was said.
-    pub log: Log,
+    pub log: MessageLog,
     /// Messages since the last read marker.
     pub unread: u32,
     /// Unread messages that mention us.
@@ -397,7 +396,7 @@ pub struct Conversation {
     /// Their nick, as they spell it.
     pub nick: String,
     /// What was said.
-    pub log: Log,
+    pub log: MessageLog,
     /// Messages since the last read marker.
     pub unread: u32,
     /// The read marker timestamp the server last confirmed.
@@ -411,7 +410,7 @@ pub struct Conversation {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "ts", ts(rename = "LocalUser"))]
-pub struct Me {
+pub struct LocalUser {
     /// Our current nick.
     pub nick: String,
     /// The account we authenticated as.
@@ -433,7 +432,7 @@ pub struct Me {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Model {
     /// Who we are.
-    pub me: Me,
+    pub me: LocalUser,
     channels: BTreeMap<CaseFolded, Channel>,
     conversations: BTreeMap<CaseFolded, Conversation>,
     people: BTreeMap<CaseFolded, Person>,
@@ -452,7 +451,7 @@ impl Model {
     /// An empty model with this retention limit per target.
     pub fn with_retention(retention: usize) -> Self {
         Self {
-            me: Me::default(),
+            me: LocalUser::default(),
             channels: BTreeMap::new(),
             conversations: BTreeMap::new(),
             people: BTreeMap::new(),
@@ -462,7 +461,7 @@ impl Model {
     }
 
     /// The next sequence number, which breaks timestamp ties in arrival order.
-    pub fn next_key(&mut self, time_ms: u64) -> MessageKey {
+    pub fn next_message_key(&mut self, time_ms: u64) -> MessageKey {
         let seq = self.next_seq;
         self.next_seq = self.next_seq.wrapping_add(1);
         MessageKey { time_ms, seq }
@@ -474,11 +473,11 @@ impl Model {
     }
 
     /// A channel, created if we have not seen it.
-    pub fn channel_mut(&mut self, key: CaseFolded, name: &str) -> &mut Channel {
+    pub fn channel_or_insert(&mut self, key: CaseFolded, name: &str) -> &mut Channel {
         let retention = self.retention;
         self.channels.entry(key).or_insert_with(|| Channel {
             name: name.to_string(),
-            log: Log::with_retention(retention),
+            log: MessageLog::with_retention(retention),
             ..Channel::default()
         })
     }
@@ -489,7 +488,7 @@ impl Model {
     }
 
     /// A channel we already know, for changing what is in it.
-    pub fn existing_channel_mut(&mut self, key: &CaseFolded) -> Option<&mut Channel> {
+    pub fn channel_mut(&mut self, key: &CaseFolded) -> Option<&mut Channel> {
         self.channels.get_mut(key)
     }
 
@@ -509,13 +508,13 @@ impl Model {
     }
 
     /// A private conversation, created if we have not seen it.
-    pub fn conversation_mut(&mut self, key: CaseFolded, nick: &str) -> &mut Conversation {
+    pub fn conversation_or_insert(&mut self, key: CaseFolded, nick: &str) -> &mut Conversation {
         let retention = self.retention;
         self.conversations
             .entry(key)
             .or_insert_with(|| Conversation {
                 nick: nick.to_string(),
-                log: Log::with_retention(retention),
+                log: MessageLog::with_retention(retention),
                 ..Conversation::default()
             })
     }
@@ -545,7 +544,7 @@ impl Model {
     }
 
     /// Someone we know about, remembered from now on if we did not already.
-    pub fn person_mut(&mut self, key: CaseFolded, nick: &str) -> &mut Person {
+    pub fn person_or_insert(&mut self, key: CaseFolded, nick: &str) -> &mut Person {
         self.people.entry(key).or_insert_with(|| Person {
             nick: nick.to_string(),
             ..Person::default()
@@ -553,12 +552,12 @@ impl Model {
     }
 
     /// Someone we already know, for changing what we hold about them.
-    pub fn existing_person_mut(&mut self, key: &CaseFolded) -> Option<&mut Person> {
+    pub fn person_mut(&mut self, key: &CaseFolded) -> Option<&mut Person> {
         self.people.get_mut(key)
     }
 
     /// A private conversation we already know, for changing what is in it.
-    pub fn existing_conversation_mut(&mut self, key: &CaseFolded) -> Option<&mut Conversation> {
+    pub fn conversation_mut(&mut self, key: &CaseFolded) -> Option<&mut Conversation> {
         self.conversations.get_mut(key)
     }
 
@@ -623,20 +622,21 @@ impl Model {
 mod tests {
     use super::*;
 
-    fn message(seq: u64, time_ms: u64, sender: &str, text: &str) -> Message {
-        let mut message = Message::new(MessageKey { time_ms, seq }, sender, MessageKind::Privmsg);
+    fn message(seq: u64, time_ms: u64, sender: &str, text: &str) -> ChatMessage {
+        let mut message =
+            ChatMessage::new(MessageKey { time_ms, seq }, sender, MessageKind::Privmsg);
         message.text = text.to_string();
         message
     }
 
-    fn with_id(mut message: Message, msgid: &str) -> Message {
+    fn with_id(mut message: ChatMessage, msgid: &str) -> ChatMessage {
         message.msgid = Some(msgid.to_string());
         message
     }
 
     #[test]
     fn orders_by_timestamp_not_by_arrival() {
-        let mut log = Log::default();
+        let mut log = MessageLog::default();
         assert!(log.insert(message(0, 200, "a", "second")));
         assert!(log.insert(message(1, 100, "a", "first")));
         let texts: Vec<&str> = log.iter().map(|m| m.text.as_str()).collect();
@@ -649,7 +649,7 @@ mod tests {
 
     #[test]
     fn breaks_a_timestamp_tie_by_arrival() {
-        let mut log = Log::default();
+        let mut log = MessageLog::default();
         log.insert(message(0, 100, "a", "one"));
         log.insert(message(1, 100, "a", "two"));
         log.insert(message(2, 100, "a", "three"));
@@ -659,7 +659,7 @@ mod tests {
 
     #[test]
     fn refuses_a_message_it_already_has_by_id() {
-        let mut log = Log::default();
+        let mut log = MessageLog::default();
         assert!(log.insert(with_id(message(0, 100, "a", "hi"), "x1")));
         assert!(
             !log.insert(with_id(message(1, 100, "a", "hi"), "x1")),
@@ -670,7 +670,7 @@ mod tests {
 
     #[test]
     fn refuses_an_identical_message_with_no_id() {
-        let mut log = Log::default();
+        let mut log = MessageLog::default();
         assert!(log.insert(message(0, 100, "a", "hi")));
         assert!(!log.insert(message(1, 100, "a", "hi")));
         assert_eq!(log.len(), 1);
@@ -678,7 +678,7 @@ mod tests {
 
     #[test]
     fn keeps_the_same_text_at_a_different_instant() {
-        let mut log = Log::default();
+        let mut log = MessageLog::default();
         assert!(log.insert(message(0, 100, "a", "hi")));
         assert!(
             log.insert(message(1, 101, "a", "hi")),
@@ -689,7 +689,7 @@ mod tests {
 
     #[test]
     fn keeps_the_same_text_from_a_different_sender() {
-        let mut log = Log::default();
+        let mut log = MessageLog::default();
         assert!(log.insert(message(0, 100, "a", "hi")));
         assert!(log.insert(message(1, 100, "b", "hi")));
         assert_eq!(log.len(), 2);
@@ -697,7 +697,7 @@ mod tests {
 
     #[test]
     fn trims_the_oldest_once_it_is_full() {
-        let mut log = Log::with_retention(3);
+        let mut log = MessageLog::with_retention(3);
         for i in 0..5 {
             log.insert(message(i, 100 + i, "a", "x"));
         }
@@ -708,7 +708,7 @@ mod tests {
 
     #[test]
     fn trimming_forgets_the_id_index_too() {
-        let mut log = Log::with_retention(2);
+        let mut log = MessageLog::with_retention(2);
         log.insert(with_id(message(0, 100, "a", "x"), "old"));
         log.insert(with_id(message(1, 101, "a", "x"), "mid"));
         log.insert(with_id(message(2, 102, "a", "x"), "new"));
@@ -722,7 +722,7 @@ mod tests {
 
     #[test]
     fn the_cap_applies_to_backfill_the_same_way() {
-        let mut log = Log::with_retention(2);
+        let mut log = MessageLog::with_retention(2);
         log.insert(message(0, 300, "a", "live"));
         log.insert(message(1, 100, "a", "old"));
         log.insert(message(2, 200, "a", "older"));
@@ -737,7 +737,7 @@ mod tests {
 
     #[test]
     fn finds_a_message_again_to_react_to_it() {
-        let mut log = Log::default();
+        let mut log = MessageLog::default();
         log.insert(with_id(message(0, 100, "a", "hi"), "x1"));
         let found = log.get_mut("x1").expect("the message is there");
         found
@@ -775,10 +775,10 @@ mod tests {
         let map = Casemapping::Rfc1459;
         let mut model = Model::default();
         model
-            .channel_mut(map.fold("#obby"), "#obby")
+            .channel_or_insert(map.fold("#obby"), "#obby")
             .members
             .insert(map.fold("[nick]"), Membership::default());
-        model.person_mut(map.fold("[nick]"), "[nick]");
+        model.person_or_insert(map.fold("[nick]"), "[nick]");
 
         model.rename(map, "[nick]", "{NICK}2");
 
@@ -814,12 +814,12 @@ mod tests {
         let mut model = Model::default();
         for name in ["#a", "#b", "#c"] {
             model
-                .channel_mut(map.fold(name), name)
+                .channel_or_insert(map.fold(name), name)
                 .members
                 .insert(map.fold("bob"), Membership::default());
         }
         model
-            .channel_mut(map.fold("#c"), "#c")
+            .channel_or_insert(map.fold("#c"), "#c")
             .members
             .remove(&map.fold("bob"));
 
@@ -831,13 +831,13 @@ mod tests {
     fn retention_reaches_every_target_it_creates() {
         let map = Casemapping::Rfc1459;
         let mut model = Model::with_retention(2);
-        let channel = model.channel_mut(map.fold("#a"), "#a");
+        let channel = model.channel_or_insert(map.fold("#a"), "#a");
         for i in 0..4 {
             channel.log.insert(message(i, 100 + i, "a", "x"));
         }
         assert_eq!(channel.log.len(), 2);
 
-        let query = model.conversation_mut(map.fold("bob"), "bob");
+        let query = model.conversation_or_insert(map.fold("bob"), "bob");
         for i in 0..4 {
             query.log.insert(message(i, 100 + i, "bob", "x"));
         }
@@ -848,7 +848,7 @@ mod tests {
     fn a_default_model_keeps_more_than_one_message() {
         let map = Casemapping::Rfc1459;
         let mut model = Model::default();
-        let channel = model.channel_mut(map.fold("#a"), "#a");
+        let channel = model.channel_or_insert(map.fold("#a"), "#a");
         for i in 0..10 {
             channel.log.insert(message(i, 100 + i, "a", "x"));
         }
@@ -858,8 +858,8 @@ mod tests {
     #[test]
     fn sequence_numbers_never_repeat() {
         let mut model = Model::default();
-        let first = model.next_key(100);
-        let second = model.next_key(100);
+        let first = model.next_message_key(100);
+        let second = model.next_message_key(100);
         assert!(second > first);
     }
 }
@@ -870,9 +870,9 @@ mod serde_tests {
 
     #[test]
     fn a_log_survives_a_json_round_trip() {
-        let mut log = Log::default();
+        let mut log = MessageLog::default();
         for (seq, text) in ["first", "second"].into_iter().enumerate() {
-            let mut message = Message::new(
+            let mut message = ChatMessage::new(
                 MessageKey {
                     time_ms: 100 + seq as u64,
                     seq: seq as u64,
@@ -889,7 +889,7 @@ mod serde_tests {
         let json = serde_json::to_string(&log).expect("a log serialises");
         assert!(json.contains('['), "the messages are a list, not an object");
 
-        let restored: Log = serde_json::from_str(&json).expect("and comes back");
+        let restored: MessageLog = serde_json::from_str(&json).expect("and comes back");
         assert_eq!(restored.len(), 2);
         assert_eq!(restored.get("m1").map(|m| m.text.as_str()), Some("second"));
         let texts: Vec<&str> = restored.iter().map(|m| m.text.as_str()).collect();
@@ -900,14 +900,14 @@ mod serde_tests {
     fn a_whole_model_serialises() {
         let map = Casemapping::Ascii;
         let mut model = Model::default();
-        let mut message = Message::new(
+        let mut message = ChatMessage::new(
             MessageKey { time_ms: 1, seq: 0 },
             "bob",
             MessageKind::Privmsg,
         );
         message.text = "hello".to_string();
         model
-            .channel_mut(map.fold("#obby"), "#obby")
+            .channel_or_insert(map.fold("#obby"), "#obby")
             .log
             .insert(message);
         serde_json::to_string(&model).expect("the model a host reads must serialise");

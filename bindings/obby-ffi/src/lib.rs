@@ -406,11 +406,11 @@ pub enum ObbyEventKind {
     /// An event this ABI does not name. Read it with [`obby_event_json`].
     Unknown = 0,
     /// The server acknowledged the capabilities we asked for.
-    CapAcknowledged,
+    CapabilitiesAcknowledged,
     /// Registration finished and the connection is usable.
     Registered,
     /// One `005` token, with its value when it has one.
-    Isupport,
+    IsupportToken,
     /// SASL authentication succeeded.
     LoggedIn,
     /// SASL authentication failed.
@@ -418,27 +418,27 @@ pub enum ObbyEventKind {
     /// The nick we asked for is taken.
     NickInUse,
     /// The model changed. The change itself is in [`obby_event_json`].
-    Changed,
+    ModelChanged,
     /// The link is dead and the host should redial.
     LinkDead,
     /// Redial after this many milliseconds.
-    Reconnect,
+    ReconnectAfter,
     /// Reconnection gave up.
-    ReconnectGaveUp,
+    ReconnectAbandoned,
     /// A command we labelled went unanswered.
     CommandTimedOut,
     /// The commands the server lets us use changed.
-    CommandsChanged,
+    AllowedCommandsChanged,
     /// A voice signalling frame. The frame is in [`obby_event_json`].
     Voice,
     /// Someone started or stopped composing a message.
-    Typing,
+    TypingChanged,
     /// Someone we monitor came online or went offline.
-    Presence,
+    PresenceChanged,
     /// A `standard-replies` FAIL, WARN or NOTE.
-    Reply,
+    ServerReply,
     /// A line the engine does not model. The message is in [`obby_event_json`].
-    Raw,
+    RawLine,
 }
 
 /// One value on an [`ObbyEvent`].
@@ -479,7 +479,7 @@ pub enum ObbyEventField {
     /// How long to wait before redialling, in milliseconds. Read with [`obby_event_number`].
     AfterMs,
     /// 1 when someone is composing, 0 when they stopped. Read with [`obby_event_number`].
-    Typing,
+    Active,
     /// 1 when someone is online, 0 when they are not. Read with [`obby_event_number`].
     Online,
 }
@@ -517,16 +517,16 @@ fn event_out(event: &Event) -> ObbyEvent {
         json: CString::new(json).unwrap_or_default(),
     };
     match event {
-        Event::CapAcknowledged { names } => {
-            out.kind = ObbyEventKind::CapAcknowledged;
+        Event::CapabilitiesAcknowledged { names } => {
+            out.kind = ObbyEventKind::CapabilitiesAcknowledged;
             out.text(ObbyEventField::Names, &names.join(" "));
         }
         Event::Registered { nick } => {
             out.kind = ObbyEventKind::Registered;
             out.text(ObbyEventField::Nick, nick);
         }
-        Event::Isupport { token, value } => {
-            out.kind = ObbyEventKind::Isupport;
+        Event::IsupportToken { token, value } => {
+            out.kind = ObbyEventKind::IsupportToken;
             out.text(ObbyEventField::Token, token);
             if let Some(value) = value {
                 out.text(ObbyEventField::Value, value);
@@ -545,47 +545,47 @@ fn event_out(event: &Event) -> ObbyEvent {
             out.text(ObbyEventField::Refused, refused);
             out.text(ObbyEventField::Trying, trying);
         }
-        Event::Changed { .. } => out.kind = ObbyEventKind::Changed,
+        Event::ModelChanged { .. } => out.kind = ObbyEventKind::ModelChanged,
         Event::LinkDead => out.kind = ObbyEventKind::LinkDead,
-        Event::Reconnect { after_ms } => {
-            out.kind = ObbyEventKind::Reconnect;
+        Event::ReconnectAfter { after_ms } => {
+            out.kind = ObbyEventKind::ReconnectAfter;
             out.number(ObbyEventField::AfterMs, *after_ms);
         }
-        Event::ReconnectGaveUp => out.kind = ObbyEventKind::ReconnectGaveUp,
+        Event::ReconnectAbandoned => out.kind = ObbyEventKind::ReconnectAbandoned,
         Event::CommandTimedOut { command } => {
             out.kind = ObbyEventKind::CommandTimedOut;
             out.text(ObbyEventField::Command, command);
         }
         #[cfg(feature = "obby")]
-        Event::CommandsChanged => out.kind = ObbyEventKind::CommandsChanged,
+        Event::AllowedCommandsChanged => out.kind = ObbyEventKind::AllowedCommandsChanged,
         #[cfg(feature = "voice")]
         Event::Voice { channel, .. } => {
             out.kind = ObbyEventKind::Voice;
             out.text(ObbyEventField::Channel, channel);
         }
-        Event::Typing {
+        Event::TypingChanged {
             target,
             nick,
-            typing,
+            active,
         } => {
-            out.kind = ObbyEventKind::Typing;
+            out.kind = ObbyEventKind::TypingChanged;
             out.text(ObbyEventField::Target, target);
             out.text(ObbyEventField::Nick, nick);
-            out.number(ObbyEventField::Typing, u64::from(*typing));
+            out.number(ObbyEventField::Active, u64::from(*active));
         }
-        Event::Presence { nick, online } => {
-            out.kind = ObbyEventKind::Presence;
+        Event::PresenceChanged { nick, online } => {
+            out.kind = ObbyEventKind::PresenceChanged;
             out.text(ObbyEventField::Nick, nick);
             out.number(ObbyEventField::Online, u64::from(*online));
         }
-        Event::Reply {
+        Event::ServerReply {
             severity,
             command,
             code,
             text,
             ..
         } => {
-            out.kind = ObbyEventKind::Reply;
+            out.kind = ObbyEventKind::ServerReply;
             out.text(
                 ObbyEventField::Severity,
                 &format!("{severity:?}").to_lowercase(),
@@ -594,7 +594,7 @@ fn event_out(event: &Event) -> ObbyEvent {
             out.text(ObbyEventField::Code, code);
             out.text(ObbyEventField::Text, text);
         }
-        Event::Raw { .. } => out.kind = ObbyEventKind::Raw,
+        Event::RawLine { .. } => out.kind = ObbyEventKind::RawLine,
         // Event is non-exhaustive, so a version of the engine newer than this ABI reaches a C
         // caller as an unknown kind with its JSON intact rather than as a build failure
         _ => {}
@@ -631,6 +631,23 @@ pub unsafe extern "C" fn obby_client_new(config: *const ObbyConfig) -> *mut Obby
     }
 
     Box::into_raw(Box::new(ObbyClient(Client::new(settings))))
+}
+
+/// Read `count` C strings out of an array, skipping any element that is null or not valid UTF-8.
+///
+/// # Safety
+/// `ptr` must be null or point to `count` valid, NUL-terminated C strings, valid for reads for the
+/// duration of this call.
+unsafe fn strings_from_ptr_array(ptr: *const *const c_char, count: usize) -> Vec<String> {
+    if ptr.is_null() {
+        return Vec::new();
+    }
+    let elements = unsafe { std::slice::from_raw_parts(ptr, count) };
+    elements
+        .iter()
+        .filter_map(|&s| unsafe { str_from_ptr(s) })
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 /// Submit a command built here rather than parsed from JSON.
@@ -702,7 +719,7 @@ pub unsafe extern "C" fn obby_client_send_message(
 ) -> bool {
     unsafe {
         submit(client, || {
-            Some(Command::Message {
+            Some(Command::SendMessage {
                 target: str_from_ptr(target)?.to_owned(),
                 text: str_from_ptr(text)?.to_owned(),
             })
@@ -722,7 +739,7 @@ pub unsafe extern "C" fn obby_client_send_notice(
 ) -> bool {
     unsafe {
         submit(client, || {
-            Some(Command::Notice {
+            Some(Command::SendNotice {
                 target: str_from_ptr(target)?.to_owned(),
                 text: str_from_ptr(text)?.to_owned(),
             })
@@ -742,7 +759,7 @@ pub unsafe extern "C" fn obby_client_send_action(
 ) -> bool {
     unsafe {
         submit(client, || {
-            Some(Command::Action {
+            Some(Command::SendAction {
                 target: str_from_ptr(target)?.to_owned(),
                 text: str_from_ptr(text)?.to_owned(),
             })
@@ -761,7 +778,7 @@ pub unsafe extern "C" fn obby_client_set_nick(
 ) -> bool {
     unsafe {
         submit(client, || {
-            Some(Command::Nick {
+            Some(Command::SetNick {
                 nick: str_from_ptr(nick)?.to_owned(),
             })
         })
@@ -780,7 +797,7 @@ pub unsafe extern "C" fn obby_client_set_topic(
 ) -> bool {
     unsafe {
         submit(client, || {
-            Some(Command::Topic {
+            Some(Command::SetTopic {
                 channel: str_from_ptr(channel)?.to_owned(),
                 topic: str_from_ptr(topic).map(ToOwned::to_owned),
             })
@@ -799,7 +816,7 @@ pub unsafe extern "C" fn obby_client_set_away(
 ) -> bool {
     unsafe {
         submit(client, || {
-            Some(Command::Away {
+            Some(Command::SetAway {
                 message: str_from_ptr(message).map(ToOwned::to_owned),
             })
         })
@@ -821,18 +838,253 @@ pub unsafe extern "C" fn obby_client_quit(client: *mut ObbyClient, reason: *cons
     }
 }
 
+/// Say we are typing, so others can show it. `state` must be `"active"`, `"paused"` or `"done"`.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_set_typing(
+    client: *mut ObbyClient,
+    target: *const c_char,
+    state: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            let state = match str_from_ptr(state)? {
+                "active" => obby_client::Typing::Active,
+                "paused" => obby_client::Typing::Paused,
+                "done" => obby_client::Typing::Done,
+                _ => return None,
+            };
+            Some(Command::SetTyping {
+                target: str_from_ptr(target)?.to_owned(),
+                state,
+            })
+        })
+    }
+}
+
+/// React to a message with an emoji.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_add_reaction(
+    client: *mut ObbyClient,
+    target: *const c_char,
+    msgid: *const c_char,
+    emoji: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::AddReaction {
+                target: str_from_ptr(target)?.to_owned(),
+                msgid: str_from_ptr(msgid)?.to_owned(),
+                emoji: str_from_ptr(emoji)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Take a reaction back.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_remove_reaction(
+    client: *mut ObbyClient,
+    target: *const c_char,
+    msgid: *const c_char,
+    emoji: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::RemoveReaction {
+                target: str_from_ptr(target)?.to_owned(),
+                msgid: str_from_ptr(msgid)?.to_owned(),
+                emoji: str_from_ptr(emoji)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Ask the server to delete a message, with `reason` when it wants one, or null.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_redact_message(
+    client: *mut ObbyClient,
+    target: *const c_char,
+    msgid: *const c_char,
+    reason: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::RedactMessage {
+                target: str_from_ptr(target)?.to_owned(),
+                msgid: str_from_ptr(msgid)?.to_owned(),
+                reason: str_from_ptr(reason).map(ToOwned::to_owned),
+            })
+        })
+    }
+}
+
+/// Tell the server how far we have read, as the `server-time` of the last message read.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_mark_read(
+    client: *mut ObbyClient,
+    target: *const c_char,
+    timestamp: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::MarkRead {
+                target: str_from_ptr(target)?.to_owned(),
+                timestamp: str_from_ptr(timestamp)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Ask for older messages than the ones we hold. A null `before` asks for the most recent.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_fetch_history(
+    client: *mut ObbyClient,
+    target: *const c_char,
+    before: *const c_char,
+    limit: u16,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::FetchHistory {
+                target: str_from_ptr(target)?.to_owned(),
+                before: str_from_ptr(before).map(ToOwned::to_owned),
+                limit,
+            })
+        })
+    }
+}
+
+/// Set one of our own metadata keys, or clear it with a null `value`.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_set_metadata(
+    client: *mut ObbyClient,
+    key: *const c_char,
+    value: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::SetMetadata {
+                key: str_from_ptr(key)?.to_owned(),
+                value: str_from_ptr(value).map(ToOwned::to_owned),
+            })
+        })
+    }
+}
+
+/// Ask to be told when these metadata keys change on anyone we can see.
+///
+/// # Safety
+/// As [`obby_client_join`]. `keys` must be null or point to `count` valid, NUL-terminated C
+/// strings, valid for reads for the duration of this call; an element that is null or not valid
+/// UTF-8 is skipped rather than failing the whole call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_subscribe_metadata(
+    client: *mut ObbyClient,
+    keys: *const *const c_char,
+    count: usize,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::SubscribeMetadata {
+                keys: strings_from_ptr_array(keys, count),
+            })
+        })
+    }
+}
+
+/// Watch these nicks, so the server says when they come and go.
+///
+/// # Safety
+/// As [`obby_client_subscribe_metadata`], with `nicks` in place of `keys`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_watch_nicks(
+    client: *mut ObbyClient,
+    nicks: *const *const c_char,
+    count: usize,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::WatchNicks {
+                nicks: strings_from_ptr_array(nicks, count),
+            })
+        })
+    }
+}
+
+/// Stop watching these nicks.
+///
+/// # Safety
+/// As [`obby_client_subscribe_metadata`], with `nicks` in place of `keys`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_unwatch_nicks(
+    client: *mut ObbyClient,
+    nicks: *const *const c_char,
+    count: usize,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::UnwatchNicks {
+                nicks: strings_from_ptr_array(nicks, count),
+            })
+        })
+    }
+}
+
+/// Send a voice signalling frame to a room. `signal_json` is the frame, already encoded as the
+/// JSON that travels in the tag.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[cfg(feature = "voice")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_send_voice_signal(
+    client: *mut ObbyClient,
+    channel: *const c_char,
+    signal_json: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::SendVoiceSignal {
+                channel: str_from_ptr(channel)?.to_owned(),
+                signal_json: str_from_ptr(signal_json)?.to_owned(),
+            })
+        })
+    }
+}
+
 /// Send one raw protocol line, without the trailing CRLF, for anything this ABI does not name.
 ///
 /// # Safety
 /// As [`obby_client_join`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn obby_client_send_raw(
+pub unsafe extern "C" fn obby_client_send_raw_line(
     client: *mut ObbyClient,
     line: *const c_char,
 ) -> bool {
     unsafe {
         submit(client, || {
-            Some(Command::Raw {
+            Some(Command::SendRawLine {
                 line: str_from_ptr(line)?.to_owned(),
             })
         })

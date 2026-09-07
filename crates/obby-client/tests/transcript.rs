@@ -64,7 +64,7 @@ fn render(client: &Client, sent: &[String], events: &[Event]) -> String {
     render_channels(client, &mut out);
 
     for (key, _) in client.model().channels() {
-        if let Some(room) = client.room(key) {
+        if let Some(room) = client.voice_room(key) {
             let _ = writeln!(
                 out,
                 "\n== voice room {} ==\nkind {:?}, {} participants",

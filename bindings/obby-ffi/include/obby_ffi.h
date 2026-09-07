@@ -30,7 +30,7 @@ typedef enum obby_event_kind {
     /**
      * The server acknowledged the capabilities we asked for.
      */
-    OBBY_EVENT_KIND_CAP_ACKNOWLEDGED,
+    OBBY_EVENT_KIND_CAPABILITIES_ACKNOWLEDGED,
     /**
      * Registration finished and the connection is usable.
      */
@@ -38,7 +38,7 @@ typedef enum obby_event_kind {
     /**
      * One `005` token, with its value when it has one.
      */
-    OBBY_EVENT_KIND_ISUPPORT,
+    OBBY_EVENT_KIND_ISUPPORT_TOKEN,
     /**
      * SASL authentication succeeded.
      */
@@ -54,7 +54,7 @@ typedef enum obby_event_kind {
     /**
      * The model changed. The change itself is in [`obby_event_json`].
      */
-    OBBY_EVENT_KIND_CHANGED,
+    OBBY_EVENT_KIND_MODEL_CHANGED,
     /**
      * The link is dead and the host should redial.
      */
@@ -62,11 +62,11 @@ typedef enum obby_event_kind {
     /**
      * Redial after this many milliseconds.
      */
-    OBBY_EVENT_KIND_RECONNECT,
+    OBBY_EVENT_KIND_RECONNECT_AFTER,
     /**
      * Reconnection gave up.
      */
-    OBBY_EVENT_KIND_RECONNECT_GAVE_UP,
+    OBBY_EVENT_KIND_RECONNECT_ABANDONED,
     /**
      * A command we labelled went unanswered.
      */
@@ -74,7 +74,7 @@ typedef enum obby_event_kind {
     /**
      * The commands the server lets us use changed.
      */
-    OBBY_EVENT_KIND_COMMANDS_CHANGED,
+    OBBY_EVENT_KIND_ALLOWED_COMMANDS_CHANGED,
     /**
      * A voice signalling frame. The frame is in [`obby_event_json`].
      */
@@ -82,19 +82,19 @@ typedef enum obby_event_kind {
     /**
      * Someone started or stopped composing a message.
      */
-    OBBY_EVENT_KIND_TYPING,
+    OBBY_EVENT_KIND_TYPING_CHANGED,
     /**
      * Someone we monitor came online or went offline.
      */
-    OBBY_EVENT_KIND_PRESENCE,
+    OBBY_EVENT_KIND_PRESENCE_CHANGED,
     /**
      * A `standard-replies` FAIL, WARN or NOTE.
      */
-    OBBY_EVENT_KIND_REPLY,
+    OBBY_EVENT_KIND_SERVER_REPLY,
     /**
      * A line the engine does not model. The message is in [`obby_event_json`].
      */
-    OBBY_EVENT_KIND_RAW,
+    OBBY_EVENT_KIND_RAW_LINE,
 } obby_event_kind;
 
 /**
@@ -167,7 +167,7 @@ typedef enum obby_event_field {
     /**
      * 1 when someone is composing, 0 when they stopped. Read with [`obby_event_number`].
      */
-    OBBY_EVENT_FIELD_TYPING,
+    OBBY_EVENT_FIELD_ACTIVE,
     /**
      * 1 when someone is online, 0 when they are not. Read with [`obby_event_number`].
      */
@@ -491,12 +491,121 @@ bool obby_client_set_away(struct obby_client_t *client, const char *message);
 bool obby_client_quit(struct obby_client_t *client, const char *reason);
 
 /**
+ * Say we are typing, so others can show it. `state` must be `"active"`, `"paused"` or `"done"`.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_set_typing(struct obby_client_t *client, const char *target, const char *state);
+
+/**
+ * React to a message with an emoji.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_add_reaction(struct obby_client_t *client,
+                              const char *target,
+                              const char *msgid,
+                              const char *emoji);
+
+/**
+ * Take a reaction back.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_remove_reaction(struct obby_client_t *client,
+                                 const char *target,
+                                 const char *msgid,
+                                 const char *emoji);
+
+/**
+ * Ask the server to delete a message, with `reason` when it wants one, or null.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_redact_message(struct obby_client_t *client,
+                                const char *target,
+                                const char *msgid,
+                                const char *reason);
+
+/**
+ * Tell the server how far we have read, as the `server-time` of the last message read.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_mark_read(struct obby_client_t *client, const char *target, const char *timestamp);
+
+/**
+ * Ask for older messages than the ones we hold. A null `before` asks for the most recent.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_fetch_history(struct obby_client_t *client,
+                               const char *target,
+                               const char *before,
+                               uint16_t limit);
+
+/**
+ * Set one of our own metadata keys, or clear it with a null `value`.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_set_metadata(struct obby_client_t *client, const char *key, const char *value);
+
+/**
+ * Ask to be told when these metadata keys change on anyone we can see.
+ *
+ * # Safety
+ * As [`obby_client_join`]. `keys` must be null or point to `count` valid, NUL-terminated C
+ * strings, valid for reads for the duration of this call; an element that is null or not valid
+ * UTF-8 is skipped rather than failing the whole call.
+ */
+bool obby_client_subscribe_metadata(struct obby_client_t *client,
+                                    const char *const *keys,
+                                    size_t count);
+
+/**
+ * Watch these nicks, so the server says when they come and go.
+ *
+ * # Safety
+ * As [`obby_client_subscribe_metadata`], with `nicks` in place of `keys`.
+ */
+bool obby_client_watch_nicks(struct obby_client_t *client, const char *const *nicks, size_t count);
+
+/**
+ * Stop watching these nicks.
+ *
+ * # Safety
+ * As [`obby_client_subscribe_metadata`], with `nicks` in place of `keys`.
+ */
+bool obby_client_unwatch_nicks(struct obby_client_t *client,
+                               const char *const *nicks,
+                               size_t count);
+
+/**
+ * Send a voice signalling frame to a room. `signal_json` is the frame, already encoded as the
+ * JSON that travels in the tag.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_send_voice_signal(struct obby_client_t *client,
+                                   const char *channel,
+                                   const char *signal_json);
+
+/**
  * Send one raw protocol line, without the trailing CRLF, for anything this ABI does not name.
  *
  * # Safety
  * As [`obby_client_join`].
  */
-bool obby_client_send_raw(struct obby_client_t *client, const char *line);
+bool obby_client_send_raw_line(struct obby_client_t *client, const char *line);
 
 /**
  * Take the next event, or null when there are none.

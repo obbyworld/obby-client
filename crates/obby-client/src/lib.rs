@@ -16,7 +16,7 @@
 //!
 //! client.handle_bytes(b":irc.example.org CAP * LS :sasl multi-prefix\r\n");
 //! client.handle_bytes(b":irc.example.org CAP * ACK :multi-prefix\r\n");
-//! assert!(matches!(client.poll_event(), Some(Event::CapAcknowledged { .. })));
+//! assert!(matches!(client.poll_event(), Some(Event::CapabilitiesAcknowledged { .. })));
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -41,7 +41,7 @@ mod timer;
 #[cfg(feature = "voice")]
 mod voice;
 
-pub use caps::{Capability, Caps, WANTED_CAPS};
+pub use caps::{Capabilities, Capability, WANTED_CAPS};
 pub use client::{Client, Config, Event, Phase, Severity};
 pub use command::{Command, Typing};
 #[cfg(feature = "e2ee")]
@@ -56,10 +56,10 @@ pub use extensions::{
     Bot, BotCommand, Bots, Commands, Invitation, LinkPreview, PRIVILEGED_COMMANDS, is_privileged,
 };
 pub use model::{
-    Channel, Conversation, DEFAULT_RETENTION, Log, Me, Membership, Message, MessageKey,
-    MessageKind, Model, Person,
+    Channel, ChatMessage, Conversation, DEFAULT_RETENTION, LocalUser, Membership, MessageKey,
+    MessageKind, MessageLog, Model, Person,
 };
-pub use monitor::Monitor;
+pub use monitor::WatchList;
 pub use sasl::{Credentials, SaslFailure};
 pub use scram::{Scram, ScramError};
 pub use session::Change;

@@ -14,12 +14,12 @@ use obby_proto::CaseFolded;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "ts", ts(rename = "WatchList"))]
-pub struct Monitor {
+pub struct WatchList {
     watching: BTreeSet<CaseFolded>,
     online: BTreeSet<CaseFolded>,
 }
 
-impl Monitor {
+impl WatchList {
     /// Watch nobody.
     pub fn new() -> Self {
         Self::default()
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn watching_someone_says_nothing_about_whether_they_are_here() {
-        let mut monitor = Monitor::new();
+        let mut monitor = WatchList::new();
         monitor.watch([fold("alice")]);
         assert!(monitor.is_watching(&fold("alice")));
         assert!(
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn the_server_deciding_someone_is_online_also_means_we_watch_them() {
-        let mut monitor = Monitor::new();
+        let mut monitor = WatchList::new();
         monitor.mark_online(fold("alice"));
         assert!(monitor.is_watching(&fold("alice")));
         assert!(monitor.is_online(&fold("alice")));
@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn dropping_someone_forgets_both_facts() {
-        let mut monitor = Monitor::new();
+        let mut monitor = WatchList::new();
         monitor.mark_online(fold("alice"));
         monitor.unwatch(&[fold("alice")]);
         assert!(!monitor.is_watching(&fold("alice")));
@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn folding_means_one_person_however_they_are_spelled() {
-        let mut monitor = Monitor::new();
+        let mut monitor = WatchList::new();
         monitor.mark_online(fold("[alice]"));
         assert!(
             monitor.is_online(&fold("{ALICE}")),
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn a_dropped_link_forgets_who_was_here_but_not_who_we_watch() {
-        let mut monitor = Monitor::new();
+        let mut monitor = WatchList::new();
         monitor.mark_online(fold("alice"));
         monitor.forget_presence();
         assert!(monitor.is_watching(&fold("alice")));

@@ -13,6 +13,20 @@ import 'package:ffi/ffi.dart';
 
 import 'src/bindings.dart';
 
+/// How far along a composed message is.
+enum TypingState {
+  /// Typing right now.
+  active,
+
+  /// Stopped, with text still in the box.
+  paused,
+
+  /// Stopped, with the box empty.
+  done;
+
+  String get _wire => name;
+}
+
 /// One connection.
 ///
 /// Call [close] when finished. The engine holds native memory that Dart's collector knows nothing
@@ -163,6 +177,151 @@ class ObbyClient {
     } finally {
       calloc.free(json);
     }
+  }
+
+  /// Join a channel.
+  bool join(String channel, {String? key}) {
+    _alive();
+    return command({'type': 'join', 'channel': channel, 'key': key});
+  }
+
+  /// Leave a channel.
+  bool part(String channel, {String? reason}) {
+    _alive();
+    return command({'type': 'part', 'channel': channel, 'reason': reason});
+  }
+
+  /// Say something to a channel or a person.
+  bool sendMessage(String target, String text) {
+    _alive();
+    return command({'type': 'send_message', 'target': target, 'text': text});
+  }
+
+  /// Send a notice, which by convention must never be auto-replied to.
+  bool sendNotice(String target, String text) {
+    _alive();
+    return command({'type': 'send_notice', 'target': target, 'text': text});
+  }
+
+  /// Send a `CTCP ACTION`, the third-person form.
+  bool sendAction(String target, String text) {
+    _alive();
+    return command({'type': 'send_action', 'target': target, 'text': text});
+  }
+
+  /// Change our nick.
+  bool setNick(String nick) {
+    _alive();
+    return command({'type': 'set_nick', 'nick': nick});
+  }
+
+  /// Set or clear a channel topic.
+  bool setTopic(String channel, {String? topic}) {
+    _alive();
+    return command({'type': 'set_topic', 'channel': channel, 'topic': topic});
+  }
+
+  /// Mark ourselves away, or come back.
+  bool setAway({String? message}) {
+    _alive();
+    return command({'type': 'set_away', 'message': message});
+  }
+
+  /// Say we are typing, so others can show it.
+  bool setTyping(String target, TypingState state) {
+    _alive();
+    return command({'type': 'set_typing', 'target': target, 'state': state._wire});
+  }
+
+  /// React to a message with an emoji.
+  bool addReaction(String target, String msgid, String emoji) {
+    _alive();
+    return command({'type': 'add_reaction', 'target': target, 'msgid': msgid, 'emoji': emoji});
+  }
+
+  /// Take a reaction back.
+  bool removeReaction(String target, String msgid, String emoji) {
+    _alive();
+    return command({'type': 'remove_reaction', 'target': target, 'msgid': msgid, 'emoji': emoji});
+  }
+
+  /// Ask the server to delete a message.
+  bool redactMessage(String target, String msgid, {String? reason}) {
+    _alive();
+    return command({
+      'type': 'redact_message',
+      'target': target,
+      'msgid': msgid,
+      'reason': reason,
+    });
+  }
+
+  /// Tell the server how far we have read.
+  bool markRead(String target, String timestamp) {
+    _alive();
+    return command({'type': 'mark_read', 'target': target, 'timestamp': timestamp});
+  }
+
+  /// Ask for older messages than the ones we hold.
+  ///
+  /// With no [before], this asks for the most recent, which is what a fresh window wants.
+  bool fetchHistory(String target, {String? before, int limit = 50}) {
+    _alive();
+    return command({
+      'type': 'fetch_history',
+      'target': target,
+      'before': before,
+      'limit': limit,
+    });
+  }
+
+  /// Set one of our own metadata keys, or clear it.
+  bool setMetadata(String key, {String? value}) {
+    _alive();
+    return command({'type': 'set_metadata', 'key': key, 'value': value});
+  }
+
+  /// Ask to be told when these metadata keys change on anyone we can see.
+  bool subscribeMetadata(List<String> keys) {
+    _alive();
+    return command({'type': 'subscribe_metadata', 'keys': keys});
+  }
+
+  /// Watch these nicks, so the server says when they come and go.
+  bool watchNicks(List<String> nicks) {
+    _alive();
+    return command({'type': 'watch_nicks', 'nicks': nicks});
+  }
+
+  /// Stop watching these nicks.
+  bool unwatchNicks(List<String> nicks) {
+    _alive();
+    return command({'type': 'unwatch_nicks', 'nicks': nicks});
+  }
+
+  /// Send a voice signalling frame to a room.
+  ///
+  /// The frame is the caller's to build: everything in it comes from a media stack the engine
+  /// deliberately knows nothing about.
+  bool sendVoiceSignal(String channel, String signalJson) {
+    _alive();
+    return command({
+      'type': 'send_voice_signal',
+      'channel': channel,
+      'signal_json': signalJson,
+    });
+  }
+
+  /// Leave the network.
+  bool quit({String? reason}) {
+    _alive();
+    return command({'type': 'quit', 'reason': reason});
+  }
+
+  /// Send a line the engine does not model. The escape hatch, so you are never stuck waiting on it.
+  bool sendRawLine(String line) {
+    _alive();
+    return command({'type': 'send_raw_line', 'line': line});
   }
 
   /// The engine's version.

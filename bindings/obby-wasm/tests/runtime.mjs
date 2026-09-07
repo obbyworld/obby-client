@@ -36,7 +36,7 @@ assert.equal(channel.name, "#obby");
 assert.equal(channel.members instanceof Map, false);
 assert.ok(Array.isArray(channel.log.messages), "the log is a list");
 
-client.command({ type: "message", target: "#obby", text: "hello" });
+client.sendMessage("#obby", "hello");
 const sent = new TextDecoder().decode(client.pollTransmit());
 assert.ok(sent.length > 0);
 

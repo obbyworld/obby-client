@@ -1,10 +1,10 @@
 # obby-client
 
 [![CI](https://github.com/obbyworld/obby-client/actions/workflows/ci.yml/badge.svg)](https://github.com/obbyworld/obby-client/actions/workflows/ci.yml)
-[![crates.io](https://img.shields.io/crates/v/obby-client.svg)](https://crates.io/crates/obby-client)
-[![npm](https://img.shields.io/npm/v/obby-client.svg)](https://www.npmjs.com/package/obby-client)
-[![PyPI](https://img.shields.io/pypi/v/obby-client.svg)](https://pypi.org/project/obby-client/)
-[![pub.dev](https://img.shields.io/pub/v/obby_client.svg)](https://pub.dev/packages/obby_client)
+[![crates.io](https://img.shields.io/crates/v/obby-client?logo=rust)](https://crates.io/crates/obby-client)
+[![npm](https://img.shields.io/npm/v/obby-client?logo=npm)](https://www.npmjs.com/package/obby-client)
+[![PyPI](https://img.shields.io/pypi/v/obby-client?logo=pypi&logoColor=white)](https://pypi.org/project/obby-client/)
+[![pub.dev](https://img.shields.io/pub/v/obby_client?logo=dart)](https://pub.dev/packages/obby_client)
 [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
 A full IRCv3 client engine, with the Obby extensions on top, as one Rust core with bindings for C,
@@ -113,7 +113,7 @@ user wants, `handle_bytes` for whatever the socket read, and `tick` for the time
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-use obby_client::{Client, Command, Config, Event, Now};
+use obby_client::{Client, Config, Event, Now};
 
 // the engine never dials, so the server, the port and the transport are yours. Wrap this in TLS
 // for 6697, which is what almost every network wants
@@ -134,7 +134,8 @@ loop {
 
     while let Some(event) = client.poll_event() {
         if let Event::Registered { .. } = event {
-            client.command(Command::Join { channel: "#obby".into(), key: None });
+            client.join("#obby", None);
+            client.send_message("#obby", "hello");
         }
     }
 }
@@ -170,7 +171,7 @@ socket.onmessage = (message) => {
   for (let bytes; (bytes = client.pollTransmit()); ) socket.send(bytes);
 };
 
-client.command({ type: "join", channel: "#obby", key: null });
+client.join("#obby");
 ```
 
 Events drain as a batch, because one call across the WebAssembly boundary costs the same for one
@@ -185,7 +186,7 @@ for (const event of client.pollEvents()) {
   if (event.type === "registered") {
     // TypeScript knows this branch has `nick`, and that a join needs `channel` and `key`
     console.log(`registered as ${event.nick}`);
-    client.command({ type: "join", channel: "#obby", key: null });
+    client.join("#obby");
   }
 }
 ```
@@ -217,7 +218,7 @@ client.handle_bytes(sock.recv(4096))
 for event in client.poll_events():
     render(event)
 
-client.command({"type": "join", "channel": "#obby", "key": None})
+client.join("#obby")
 client.tick(monotonic_ms, unix_ms)
 ```
 

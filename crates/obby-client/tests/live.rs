@@ -108,7 +108,7 @@ fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::erro
 
         while let Some(event) = client.poll_event() {
             match event {
-                Event::CapAcknowledged { names } => caps.extend(names),
+                Event::CapabilitiesAcknowledged { names } => caps.extend(names),
                 Event::Registered { nick } => {
                     println!("registered as {nick}");
                     client.command(Command::Join {
@@ -116,19 +116,19 @@ fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::erro
                         key: None,
                     });
                 }
-                Event::Changed {
-                    change: obby_client::Change::Joined { channel },
+                Event::ModelChanged {
+                    change: obby_client::Change::ChannelJoined { channel },
                 } if channel == CHANNEL => {
                     joined = true;
-                    client.command(Command::Message {
+                    client.command(Command::SendMessage {
                         target: CHANNEL.to_string(),
                         text: "obby-client smoke test".to_string(),
                     });
                 }
-                Event::Changed {
-                    change: obby_client::Change::Message { target, .. },
+                Event::ModelChanged {
+                    change: obby_client::Change::MessageAdded { target, .. },
                 } if target == CHANNEL => said = true,
-                Event::Reply { severity, code, .. } => {
+                Event::ServerReply { severity, code, .. } => {
                     println!("server reply: {severity:?} {code}");
                 }
                 _ => {}

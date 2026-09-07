@@ -6,11 +6,11 @@ use alloc::vec::Vec;
 use obby_proto::{Casemapping, Isupport, Message};
 
 use crate::batch::{Batches, ClosedBatch};
-use crate::caps::Caps;
+use crate::caps::Capabilities;
 use crate::command::Command;
 use crate::label::{DEFAULT_TIMEOUT_MS, Labels};
 use crate::model::Model;
-use crate::monitor::{self, Monitor};
+use crate::monitor::{self, WatchList};
 use crate::sasl::{self, Credentials, SaslFailure, SaslState};
 use crate::session::{self, Change};
 use crate::timer::{
@@ -103,7 +103,7 @@ impl Config {
 #[non_exhaustive]
 pub enum Event {
     /// A capability was acknowledged, and whatever it enables is now live.
-    CapAcknowledged {
+    CapabilitiesAcknowledged {
         /// The capability names, as acknowledged.
         names: Vec<String>,
     },
@@ -113,7 +113,7 @@ pub enum Event {
         nick: String,
     },
     /// An ISUPPORT token arrived. Emitted per token so a host can react to one without diffing.
-    Isupport {
+    IsupportToken {
         /// The token name, such as `CHANMODES`.
         token: String,
         /// Its value, absent for a boolean token, present and empty for `TOKEN=`.
@@ -137,21 +137,21 @@ pub enum Event {
         trying: String,
     },
     /// The model changed.
-    Changed {
+    ModelChanged {
         /// What changed.
         change: Change,
     },
     /// The link went quiet for too long and should be treated as dead. The host closes its socket
-    /// and waits for [`Event::Reconnect`].
+    /// and waits for [`Event::ReconnectAfter`].
     LinkDead,
     /// Time to open a new connection. The host dials and calls [`Client::handle_connected`].
-    Reconnect {
+    ReconnectAfter {
         /// How long the host should wait first.
         #[cfg_attr(feature = "ts", ts(type = "number"))]
         after_ms: u64,
     },
     /// Reconnecting has been given up on after too many attempts.
-    ReconnectGaveUp,
+    ReconnectAbandoned,
     /// A command we labelled never got its reply.
     CommandTimedOut {
         /// The command that went unanswered.
@@ -159,7 +159,7 @@ pub enum Event {
     },
     /// The set of commands the server allows us changed.
     #[cfg(feature = "obby")]
-    CommandsChanged,
+    AllowedCommandsChanged,
     /// A voice signalling frame arrived, and the room state has already been updated for it.
     ///
     /// The host handles the media plane: this carries the session descriptions and candidates it
@@ -172,23 +172,23 @@ pub enum Event {
         signal: crate::voice::Signal,
     },
     /// Someone started or stopped composing a message.
-    Typing {
+    TypingChanged {
         /// The channel or conversation they are composing in.
         target: String,
         /// Who.
         nick: String,
         /// True when they are composing now.
-        typing: bool,
+        active: bool,
     },
     /// Someone we watch came online or went offline.
-    Presence {
+    PresenceChanged {
         /// Who.
         nick: String,
         /// True when they are here now.
         online: bool,
     },
     /// The server reported the outcome of something, through `standard-replies`.
-    Reply {
+    ServerReply {
         /// How serious it is.
         severity: Severity,
         /// The command it concerns, or `*` when the server did not say.
@@ -202,7 +202,7 @@ pub enum Event {
     },
     /// A line arrived that the engine has no dedicated handling for yet. Everything is surfaced, so
     /// a host is never blind to traffic the engine does not model.
-    Raw {
+    RawLine {
         /// The parsed line.
         message: Message,
     },
@@ -213,12 +213,12 @@ pub enum Event {
 pub struct Client {
     config: Config,
     phase: Phase,
-    caps: Caps,
+    caps: Capabilities,
     nick: String,
     isupport: Isupport,
     model: Model,
     batches: Batches,
-    monitor: Monitor,
+    monitor: WatchList,
     /// Channel keys, so a rejoin after a reconnect is not refused for want of one.
     channel_keys: alloc::collections::BTreeMap<obby_proto::CaseFolded, String>,
     /// Metadata keys we subscribed to, so a reconnect can ask again.
@@ -267,10 +267,10 @@ impl Client {
             dropped_lines: 0,
             config,
             phase: Phase::Disconnected,
-            caps: Caps::default(),
+            caps: Capabilities::default(),
             isupport: Isupport::default(),
             batches: Batches::new(),
-            monitor: Monitor::new(),
+            monitor: WatchList::new(),
             channel_keys: alloc::collections::BTreeMap::new(),
             metadata_subscriptions: Vec::new(),
             #[cfg(feature = "voice")]
@@ -301,12 +301,12 @@ impl Client {
         self.arm_keepalive();
         // CAP LS goes first so the server holds registration open while we negotiate. PASS has to
         // precede NICK and USER, and NICK and USER may be sent during negotiation.
-        self.send(&Message::new("CAP", ["LS", "302"]));
+        self.send_line(&Message::new("CAP", ["LS", "302"]));
         if let Some(password) = self.config.password.clone() {
-            self.send(&Message::new("PASS", [password]));
+            self.send_line(&Message::new("PASS", [password]));
         }
-        self.send(&Message::new("NICK", [self.config.nick.clone()]));
-        self.send(&Message::new(
+        self.send_line(&Message::new("NICK", [self.config.nick.clone()]));
+        self.send_line(&Message::new(
             "USER",
             [
                 self.config.username.clone(),
@@ -319,12 +319,12 @@ impl Client {
 
     /// Tell the engine its transport died. The model survives, so a reconnect can resume from it.
     ///
-    /// The engine decides when to try again and says so with [`Event::Reconnect`]. The host owns
+    /// The engine decides when to try again and says so with [`Event::ReconnectAfter`]. The host owns
     /// every socket, and this is the only thing it has to report.
     pub fn handle_disconnected(&mut self) {
         self.phase = Phase::Disconnected;
         self.batches.drop_all();
-        self.caps = Caps::default();
+        self.caps = Capabilities::default();
         self.sasl = SaslState::default();
         self.monitor.forget_presence();
         // who was in a channel is only true while we are connected to hear about it. The messages
@@ -340,9 +340,9 @@ impl Client {
                     Deadline::Reconnect,
                     self.monotonic_ms.saturating_add(after_ms),
                 );
-                self.events.push_back(Event::Reconnect { after_ms });
+                self.events.push_back(Event::ReconnectAfter { after_ms });
             }
-            None => self.events.push_back(Event::ReconnectGaveUp),
+            None => self.events.push_back(Event::ReconnectAbandoned),
         }
     }
 
@@ -357,14 +357,14 @@ impl Client {
         for deadline in self.timers.expire(now) {
             match deadline {
                 Deadline::PingKeepalive => {
-                    self.send(&Message::new("PING", [self.nick.clone()]));
+                    self.send_line(&Message::new("PING", [self.nick.clone()]));
                     self.timers.set(
                         Deadline::DeadLink,
                         now.monotonic_ms.saturating_add(DEAD_LINK_MS),
                     );
                 }
                 Deadline::DeadLink => self.events.push_back(Event::LinkDead),
-                Deadline::Reconnect => self.events.push_back(Event::Reconnect { after_ms: 0 }),
+                Deadline::Reconnect => self.events.push_back(Event::ReconnectAfter { after_ms: 0 }),
                 Deadline::Typing(target, who) => self.expire_typing(&target, &who),
             }
         }
@@ -381,6 +381,177 @@ impl Client {
         self.timers.next()
     }
 
+    /// Join a channel, with its key when it has one.
+    pub fn join(&mut self, channel: impl Into<String>, key: Option<String>) {
+        self.command(Command::Join {
+            channel: channel.into(),
+            key,
+        });
+    }
+
+    /// Leave a channel, with a reason the others in it see.
+    pub fn part(&mut self, channel: impl Into<String>, reason: Option<String>) {
+        self.command(Command::Part {
+            channel: channel.into(),
+            reason,
+        });
+    }
+
+    /// Say something to a channel or a person.
+    pub fn send_message(&mut self, target: impl Into<String>, text: impl Into<String>) {
+        self.command(Command::SendMessage {
+            target: target.into(),
+            text: text.into(),
+        });
+    }
+
+    /// Send a notice, which by convention must never be auto-replied to.
+    pub fn send_notice(&mut self, target: impl Into<String>, text: impl Into<String>) {
+        self.command(Command::SendNotice {
+            target: target.into(),
+            text: text.into(),
+        });
+    }
+
+    /// Send a `CTCP ACTION`, the third-person form.
+    pub fn send_action(&mut self, target: impl Into<String>, text: impl Into<String>) {
+        self.command(Command::SendAction {
+            target: target.into(),
+            text: text.into(),
+        });
+    }
+
+    /// Change our nick.
+    pub fn set_nick(&mut self, nick: impl Into<String>) {
+        self.command(Command::SetNick { nick: nick.into() });
+    }
+
+    /// Set a channel's topic, or ask for the current one with `None`.
+    pub fn set_topic(&mut self, channel: impl Into<String>, topic: Option<String>) {
+        self.command(Command::SetTopic {
+            channel: channel.into(),
+            topic,
+        });
+    }
+
+    /// Go away with a message, or come back with `None`.
+    pub fn set_away(&mut self, message: Option<String>) {
+        self.command(Command::SetAway { message });
+    }
+
+    /// Tell a target we are composing, paused, or done.
+    pub fn set_typing(&mut self, target: impl Into<String>, state: crate::command::Typing) {
+        self.command(Command::SetTyping {
+            target: target.into(),
+            state,
+        });
+    }
+
+    /// React to a message with an emoji.
+    pub fn add_reaction(
+        &mut self,
+        target: impl Into<String>,
+        msgid: impl Into<String>,
+        emoji: impl Into<String>,
+    ) {
+        self.command(Command::AddReaction {
+            target: target.into(),
+            msgid: msgid.into(),
+            emoji: emoji.into(),
+        });
+    }
+
+    /// Take one of our reactions back.
+    pub fn remove_reaction(
+        &mut self,
+        target: impl Into<String>,
+        msgid: impl Into<String>,
+        emoji: impl Into<String>,
+    ) {
+        self.command(Command::RemoveReaction {
+            target: target.into(),
+            msgid: msgid.into(),
+            emoji: emoji.into(),
+        });
+    }
+
+    /// Ask the server to redact a message.
+    pub fn redact_message(
+        &mut self,
+        target: impl Into<String>,
+        msgid: impl Into<String>,
+        reason: Option<String>,
+    ) {
+        self.command(Command::RedactMessage {
+            target: target.into(),
+            msgid: msgid.into(),
+            reason,
+        });
+    }
+
+    /// Move our read marker in a target, with a `server-time` timestamp.
+    pub fn mark_read(&mut self, target: impl Into<String>, timestamp: impl Into<String>) {
+        self.command(Command::MarkRead {
+            target: target.into(),
+            timestamp: timestamp.into(),
+        });
+    }
+
+    /// Ask for older messages in a target, before a `server-time` timestamp.
+    pub fn fetch_history(&mut self, target: impl Into<String>, before: Option<String>, limit: u16) {
+        self.command(Command::FetchHistory {
+            target: target.into(),
+            before,
+            limit,
+        });
+    }
+
+    /// Set one of our own metadata keys, or clear it with `None`.
+    pub fn set_metadata(&mut self, key: impl Into<String>, value: Option<String>) {
+        self.command(Command::SetMetadata {
+            key: key.into(),
+            value,
+        });
+    }
+
+    /// Subscribe to the metadata keys we want told about.
+    pub fn subscribe_metadata(&mut self, keys: Vec<String>) {
+        self.command(Command::SubscribeMetadata { keys });
+    }
+
+    /// Watch nicks, so we hear when they come online.
+    pub fn watch_nicks(&mut self, nicks: Vec<String>) {
+        self.command(Command::WatchNicks { nicks });
+    }
+
+    /// Stop watching nicks.
+    pub fn unwatch_nicks(&mut self, nicks: Vec<String>) {
+        self.command(Command::UnwatchNicks { nicks });
+    }
+
+    /// Send one voice signalling frame, as the JSON the room speaks.
+    #[cfg(feature = "voice")]
+    pub fn send_voice_signal(
+        &mut self,
+        channel: impl Into<String>,
+        signal_json: impl Into<String>,
+    ) {
+        self.command(Command::SendVoiceSignal {
+            channel: channel.into(),
+            signal_json: signal_json.into(),
+        });
+    }
+
+    /// Leave the server, with a reason the others see.
+    pub fn quit(&mut self, reason: Option<String>) {
+        self.command(Command::Quit { reason });
+    }
+
+    /// Send one raw protocol line, for anything this API does not name.
+    pub fn send_raw_line(&mut self, line: impl Into<String>) {
+        self.command(Command::SendRawLine { line: line.into() });
+    }
+
     /// Do something on this connection.
     ///
     /// Anything the server will echo back to us is left for that echo to record, so a message never
@@ -389,9 +560,13 @@ impl Client {
     pub fn command(&mut self, command: Command) {
         // the three that land in a conversation need the model, the rest are pure translation
         match command {
-            Command::Message { target, text } => self.say(&Message::new("PRIVMSG", [target, text])),
-            Command::Notice { target, text } => self.say(&Message::new("NOTICE", [target, text])),
-            Command::Action { target, text } => {
+            Command::SendMessage { target, text } => {
+                self.say(&Message::new("PRIVMSG", [target, text]));
+            }
+            Command::SendNotice { target, text } => {
+                self.say(&Message::new("NOTICE", [target, text]));
+            }
+            Command::SendAction { target, text } => {
                 let body = alloc::format!("\u{1}ACTION {text}\u{1}");
                 self.say(&Message::new("PRIVMSG", [target, body]));
             }
@@ -407,7 +582,7 @@ impl Client {
                     Some(key) => Message::new("JOIN", [channel, key]),
                     None => Message::new("JOIN", [channel]),
                 };
-                self.send_labeled(&line);
+                self.send_line_labeled(&line);
             }
             Command::SubscribeMetadata { keys } => {
                 for key in &keys {
@@ -417,13 +592,13 @@ impl Client {
                 }
                 let mut params = alloc::vec!["*".to_string(), "SUB".to_string()];
                 params.extend(keys);
-                self.send_labeled(&Message::new("METADATA", params));
+                self.send_line_labeled(&Message::new("METADATA", params));
             }
-            Command::Watch { nicks } => self.set_watching(&nicks, true),
-            Command::Unwatch { nicks } => self.set_watching(&nicks, false),
+            Command::WatchNicks { nicks } => self.set_watching(&nicks, true),
+            Command::UnwatchNicks { nicks } => self.set_watching(&nicks, false),
             other => {
                 if let Some(line) = Self::wire(other) {
-                    self.send_labeled(&line);
+                    self.send_line_labeled(&line);
                 }
             }
         }
@@ -434,43 +609,43 @@ impl Client {
     /// `None` for a raw line that will not parse, which must not reach the wire half-formed.
     fn wire(command: Command) -> Option<Message> {
         Some(match command {
-            Command::Message { .. }
-            | Command::Notice { .. }
-            | Command::Action { .. }
-            | Command::Watch { .. }
-            | Command::Unwatch { .. } => return None,
+            Command::SendMessage { .. }
+            | Command::SendNotice { .. }
+            | Command::SendAction { .. }
+            | Command::WatchNicks { .. }
+            | Command::UnwatchNicks { .. } => return None,
             Command::Join { .. } | Command::SubscribeMetadata { .. } => return None,
             Command::Part { channel, reason } => match reason {
                 Some(reason) => Message::new("PART", [channel, reason]),
                 None => Message::new("PART", [channel]),
             },
-            Command::Nick { nick } => Message::new("NICK", [nick]),
-            Command::Topic { channel, topic } => match topic {
+            Command::SetNick { nick } => Message::new("NICK", [nick]),
+            Command::SetTopic { channel, topic } => match topic {
                 Some(topic) => Message::new("TOPIC", [channel, topic]),
                 // an empty trailing parameter clears a topic; omitting it asks what the topic is
                 None => Message::new("TOPIC", [channel, String::new()]),
             },
-            Command::Away { message } => match message {
+            Command::SetAway { message } => match message {
                 Some(message) => Message::new("AWAY", [message]),
                 None => Message::new("AWAY", [] as [String; 0]),
             },
-            Command::Typing { target, state } => {
+            Command::SetTyping { target, state } => {
                 let mut line = Message::new("TAGMSG", [target]);
                 line.tags
                     .set(obby_proto::Tag::new("+typing", state.as_str()));
                 line
             }
-            Command::React {
+            Command::AddReaction {
                 target,
                 msgid,
                 emoji,
             } => Self::reaction("+draft/react", &target, &msgid, &emoji),
-            Command::Unreact {
+            Command::RemoveReaction {
                 target,
                 msgid,
                 emoji,
             } => Self::reaction("+draft/unreact", &target, &msgid, &emoji),
-            Command::Redact {
+            Command::RedactMessage {
                 target,
                 msgid,
                 reason,
@@ -482,7 +657,7 @@ impl Client {
                 "MARKREAD",
                 [target, alloc::format!("timestamp={timestamp}")],
             ),
-            Command::History {
+            Command::FetchHistory {
                 target,
                 before,
                 limit,
@@ -514,17 +689,20 @@ impl Client {
                 None => Message::new("METADATA", ["*".to_string(), "SET".to_string(), key]),
             },
             #[cfg(feature = "voice")]
-            Command::Voice { channel, payload } => {
+            Command::SendVoiceSignal {
+                channel,
+                signal_json,
+            } => {
                 let mut line = Message::new("TAGMSG", [channel]);
                 line.tags
-                    .set(obby_proto::Tag::new("+obsidianirc/rtc", payload));
+                    .set(obby_proto::Tag::new("+obsidianirc/rtc", signal_json));
                 line
             }
             Command::Quit { reason } => match reason {
                 Some(reason) => Message::new("QUIT", [reason]),
                 None => Message::new("QUIT", [] as [String; 0]),
             },
-            Command::Raw { line } => Message::parse(&line).ok()?,
+            Command::SendRawLine { line } => Message::parse(&line).ok()?,
         })
     }
 
@@ -540,7 +718,7 @@ impl Client {
         let limit = self.isupport.number("MONITOR").unwrap_or(100) as usize;
         let verb = if watching { "+" } else { "-" };
         for chunk in monitor::batched(nicks, limit) {
-            self.send(&Message::new("MONITOR", [verb.to_string(), chunk]));
+            self.send_line(&Message::new("MONITOR", [verb.to_string(), chunk]));
         }
     }
 
@@ -553,7 +731,7 @@ impl Client {
 
     /// Send something that lands in a conversation, recording it ourselves if no echo is coming.
     fn say(&mut self, line: &Message) {
-        self.send_labeled(line);
+        self.send_line_labeled(line);
         if self.caps.has("echo-message") {
             return;
         }
@@ -571,9 +749,9 @@ impl Client {
     /// Returns the label when `labeled-response` is in force. Without that capability the command
     /// still goes out, unlabelled, because a server that does not support it would only be confused
     /// by the tag.
-    pub fn send_labeled(&mut self, message: &Message) -> Option<String> {
+    pub fn send_line_labeled(&mut self, message: &Message) -> Option<String> {
         if !self.caps.has("labeled-response") {
-            self.send(message);
+            self.send_line(message);
             return None;
         }
         let label = self.labels.generate();
@@ -586,7 +764,7 @@ impl Client {
             self.monotonic_ms.saturating_add(DEFAULT_TIMEOUT_MS),
             message.command.clone(),
         );
-        self.send(&message);
+        self.send_line(&message);
         Some(label)
     }
 
@@ -614,14 +792,14 @@ impl Client {
         if !watched.is_empty() {
             let limit = self.isupport.number("MONITOR").unwrap_or(100) as usize;
             for chunk in monitor::batched(&watched, limit) {
-                self.send(&Message::new("MONITOR", ["+".to_string(), chunk]));
+                self.send_line(&Message::new("MONITOR", ["+".to_string(), chunk]));
             }
         }
 
         if !self.metadata_subscriptions.is_empty() {
             let mut params = alloc::vec!["*".to_string(), "SUB".to_string()];
             params.extend(self.metadata_subscriptions.clone());
-            self.send(&Message::new("METADATA", params));
+            self.send_line(&Message::new("METADATA", params));
         }
 
         for (name, newest) in rejoining {
@@ -630,11 +808,11 @@ impl Client {
                 Some(key) => Message::new("JOIN", [name.clone(), key]),
                 None => Message::new("JOIN", [name.clone()]),
             };
-            self.send(&join);
+            self.send_line(&join);
             // ask only for what happened while we were gone, rather than refetching a whole window
             // and leaning on dedup to sort it out
             if let (true, Some(msgid)) = (self.caps.has("draft/chathistory"), newest) {
-                self.send(&Message::new(
+                self.send_line(&Message::new(
                     "CHATHISTORY",
                     [
                         "AFTER".to_string(),
@@ -701,7 +879,7 @@ impl Client {
     }
 
     /// Queue a message to be written. Use this for anything the engine does not model yet.
-    pub fn send(&mut self, message: &Message) {
+    pub fn send_line(&mut self, message: &Message) {
         let mut line = alloc::format!("{message}").into_bytes();
         line.extend_from_slice(b"\r\n");
         self.outbox.push_back(line);
@@ -718,7 +896,7 @@ impl Client {
     }
 
     /// The capabilities the server offers and the ones we hold.
-    pub fn caps(&self) -> &Caps {
+    pub fn capabilities(&self) -> &Capabilities {
         &self.caps
     }
 
@@ -741,12 +919,12 @@ impl Client {
     /// Signalling and room state only. Every track, codec and peer connection is the host's, and
     /// nothing here knows they exist.
     #[cfg(feature = "voice")]
-    pub fn room(&self, channel: &obby_proto::CaseFolded) -> Option<&crate::voice::Room> {
+    pub fn voice_room(&self, channel: &obby_proto::CaseFolded) -> Option<&crate::voice::Room> {
         self.rooms.get(channel)
     }
 
     /// Who we are watching for coming online, and who is here.
-    pub fn monitor(&self) -> &Monitor {
+    pub fn watch_list(&self) -> &WatchList {
         &self.monitor
     }
 
@@ -769,7 +947,7 @@ impl Client {
         }
         if message.is("PING") {
             let token = message.trailing().unwrap_or_default().to_string();
-            self.send(&Message::new("PONG", [token]));
+            self.send_line(&Message::new("PONG", [token]));
             return;
         }
         if message.is("CAP") {
@@ -802,7 +980,7 @@ impl Client {
         #[cfg(feature = "obby")]
         if message.is("CMDSLIST") {
             self.commands.apply(&message);
-            self.events.push_back(Event::CommandsChanged);
+            self.events.push_back(Event::AllowedCommandsChanged);
             return;
         }
         if matches!(message.command.as_str(), "730" | "731") {
@@ -889,7 +1067,7 @@ impl Client {
             session::apply(&mut ctx, message)
         };
         if changes.is_empty() {
-            self.events.push_back(Event::Raw {
+            self.events.push_back(Event::RawLine {
                 message: message.clone(),
             });
             return;
@@ -897,12 +1075,12 @@ impl Client {
         for change in &changes {
             // NAMES gives us nicks and prefixes and nothing else, so joining is when we go and ask
             // who these people actually are
-            if let Change::Joined { channel } = change {
+            if let Change::ChannelJoined { channel } = change {
                 self.request_who(channel);
             }
         }
         for change in changes {
-            self.events.push_back(Event::Changed { change });
+            self.events.push_back(Event::ModelChanged { change });
         }
     }
 
@@ -912,7 +1090,7 @@ impl Client {
     /// that two nicks are the same person.
     fn request_who(&mut self, channel: &str) {
         if self.isupport.has("WHOX") {
-            self.send(&Message::new(
+            self.send_line(&Message::new(
                 "WHO",
                 [
                     channel.to_string(),
@@ -920,7 +1098,7 @@ impl Client {
                 ],
             ));
         } else {
-            self.send(&Message::new("WHO", [channel]));
+            self.send_line(&Message::new("WHO", [channel]));
         }
     }
 
@@ -948,7 +1126,8 @@ impl Client {
             "ACK" => {
                 let names = self.caps.acknowledge(list);
                 if !names.is_empty() {
-                    self.events.push_back(Event::CapAcknowledged { names });
+                    self.events
+                        .push_back(Event::CapabilitiesAcknowledged { names });
                 }
                 self.finish_negotiation_if_settled();
             }
@@ -970,7 +1149,7 @@ impl Client {
         // one REQ per line, and the server answers each atomically: all of a REQ is acked or none of
         // it is, so a rejected capability never takes the rest of the line down with it
         for name in wanted {
-            self.send(&Message::new("CAP", ["REQ".to_string(), name]));
+            self.send_line(&Message::new("CAP", ["REQ".to_string(), name]));
         }
     }
 
@@ -982,7 +1161,7 @@ impl Client {
             return;
         }
         self.phase = Phase::Registering;
-        self.send(&Message::new("CAP", ["END"]));
+        self.send_line(&Message::new("CAP", ["END"]));
     }
 
     /// Open the exchange, if there is one to open. True when we are now waiting on the server.
@@ -1002,7 +1181,7 @@ impl Client {
             return false;
         }
         self.sasl = SaslState::Offered;
-        self.send(&Message::new("AUTHENTICATE", [mechanism]));
+        self.send_line(&Message::new("AUTHENTICATE", [mechanism]));
         true
     }
 
@@ -1073,12 +1252,12 @@ impl Client {
         self.scram = None;
         self.sasl = SaslState::Responded;
         // an empty response closes the exchange and lets the server send its verdict
-        self.send(&Message::new("AUTHENTICATE", ["+"]));
+        self.send_line(&Message::new("AUTHENTICATE", ["+"]));
     }
 
     fn send_sasl(&mut self, payload: &[u8]) {
         for line in sasl::encode_response(payload) {
-            self.send(&Message::new("AUTHENTICATE", [line]));
+            self.send_line(&Message::new("AUTHENTICATE", [line]));
         }
     }
 
@@ -1098,7 +1277,7 @@ impl Client {
     /// host asked for the rename and gets to decide what to do about it.
     fn handle_nick_refused(&mut self, message: &Message) {
         if self.phase == Phase::Registered {
-            self.events.push_back(Event::Raw {
+            self.events.push_back(Event::RawLine {
                 message: message.clone(),
             });
             return;
@@ -1115,7 +1294,7 @@ impl Client {
             refused,
             trying: trying.clone(),
         });
-        self.send(&Message::new("NICK", [trying]));
+        self.send_line(&Message::new("NICK", [trying]));
     }
 
     /// Apply a voice signalling frame, if the line carries one.
@@ -1184,10 +1363,10 @@ impl Client {
         }
 
         if self.model.set_typing(&folded_target, folded_who, typing) {
-            self.events.push_back(Event::Typing {
+            self.events.push_back(Event::TypingChanged {
                 target,
                 nick: who,
-                typing,
+                active: typing,
             });
         }
         true
@@ -1200,10 +1379,10 @@ impl Client {
             obby_proto::CaseFolded::already_folded(who),
         );
         if self.model.set_typing(&target, who.clone(), false) {
-            self.events.push_back(Event::Typing {
+            self.events.push_back(Event::TypingChanged {
                 target: target.into_string(),
                 nick: who.into_string(),
-                typing: false,
+                active: false,
             });
         }
     }
@@ -1221,7 +1400,8 @@ impl Client {
             } else {
                 self.monitor.mark_offline(&folded);
             }
-            self.events.push_back(Event::Presence { nick, online });
+            self.events
+                .push_back(Event::PresenceChanged { nick, online });
         }
     }
 
@@ -1243,7 +1423,7 @@ impl Client {
             .take(message.params.len().saturating_sub(3))
             .cloned()
             .collect();
-        self.events.push_back(Event::Reply {
+        self.events.push_back(Event::ServerReply {
             severity,
             command,
             code,
@@ -1263,7 +1443,7 @@ impl Client {
             .take(message.params.len().saturating_sub(2));
         for token in tokens {
             let applied = self.isupport.apply(token);
-            self.events.push_back(Event::Isupport {
+            self.events.push_back(Event::IsupportToken {
                 token: applied.name,
                 value: applied.value,
             });
@@ -1471,7 +1651,7 @@ mod tests {
             events(&mut client)
                 .into_iter()
                 .map(|event| match event {
-                    Event::Isupport { token, value } => (token, value),
+                    Event::IsupportToken { token, value } => (token, value),
                     other => panic!("expected only ISUPPORT events, got {other:?}"),
                 })
                 .collect::<Vec<_>>(),
@@ -1549,7 +1729,7 @@ mod tests {
         assert_eq!(
             events(&mut client),
             [
-                Event::CapAcknowledged {
+                Event::CapabilitiesAcknowledged {
                     names: alloc::vec!["sasl".to_string()]
                 },
                 Event::LoggedIn {
@@ -1623,14 +1803,14 @@ mod tests {
             "",
             "the engine did not ask for this rename"
         );
-        assert!(matches!(client.poll_event(), Some(Event::Raw { .. })));
+        assert!(matches!(client.poll_event(), Some(Event::RawLine { .. })));
     }
 
     #[test]
     fn surfaces_a_line_it_does_not_model() {
         let mut client = Client::new(Config::new("me"));
         client.handle_bytes(b":s 375 me :- message of the day -\r\n");
-        let Some(Event::Raw { message }) = client.poll_event() else {
+        let Some(Event::RawLine { message }) = client.poll_event() else {
             panic!("an unmodelled line must still reach the host");
         };
         assert!(message.is("375"));
@@ -1653,8 +1833,8 @@ mod tests {
         );
         assert!(events(&mut client).iter().any(|event| matches!(
             event,
-            Event::Changed {
-                change: Change::Message { .. }
+            Event::ModelChanged {
+                change: Change::MessageAdded { .. }
             }
         )));
     }
@@ -1863,12 +2043,12 @@ mod time_tests {
         );
 
         let first = events(&mut client);
-        assert!(matches!(first.as_slice(), [Event::Reconnect { .. }]));
+        assert!(matches!(first.as_slice(), [Event::ReconnectAfter { .. }]));
 
         client.handle_connected();
         client.handle_disconnected();
         assert!(
-            matches!(events(&mut client).as_slice(), [Event::Reconnect { after_ms }] if *after_ms == ReconnectBackoff::DEFAULT_BASE_MS),
+            matches!(events(&mut client).as_slice(), [Event::ReconnectAfter { after_ms }] if *after_ms == ReconnectBackoff::DEFAULT_BASE_MS),
             "a successful connection resets the backoff"
         );
     }
@@ -1880,7 +2060,7 @@ mod time_tests {
         for _ in 0..3 {
             client.handle_disconnected();
             for event in events(&mut client) {
-                if let Event::Reconnect { after_ms } = event {
+                if let Event::ReconnectAfter { after_ms } = event {
                     delays.push(after_ms);
                 }
             }
@@ -1895,7 +2075,7 @@ mod time_tests {
     fn a_command_is_labelled_only_when_the_server_can_correlate_it() {
         let mut client = Client::new(Config::new("me"));
         assert_eq!(
-            client.send_labeled(&Message::new("WHO", ["#obby"])),
+            client.send_line_labeled(&Message::new("WHO", ["#obby"])),
             None,
             "labelling a server that never agreed to it only confuses it"
         );
@@ -1908,7 +2088,7 @@ mod time_tests {
         sent(&mut client);
 
         let label = client
-            .send_labeled(&Message::new("WHO", ["#obby"]))
+            .send_line_labeled(&Message::new("WHO", ["#obby"]))
             .expect("the capability is in force");
         assert_eq!(
             sent(&mut client),
@@ -1922,7 +2102,7 @@ mod time_tests {
         client.handle_connected();
         client.handle_bytes(b":s CAP * LS :labeled-response\r\n");
         client.handle_bytes(b":s CAP * ACK :labeled-response\r\n");
-        client.send_labeled(&Message::new("WHO", ["#obby"]));
+        client.send_line_labeled(&Message::new("WHO", ["#obby"]));
         events(&mut client);
 
         client.tick(at(DEFAULT_TIMEOUT_MS));
@@ -1941,7 +2121,7 @@ mod time_tests {
         client.handle_bytes(b":s CAP * LS :labeled-response\r\n");
         client.handle_bytes(b":s CAP * ACK :labeled-response\r\n");
         let label = client
-            .send_labeled(&Message::new("WHO", ["#obby"]))
+            .send_line_labeled(&Message::new("WHO", ["#obby"]))
             .expect("labelled");
         client.handle_bytes(alloc::format!("@label={label} :s 315 me #obby :End\r\n").as_bytes());
         events(&mut client);
@@ -2074,7 +2254,7 @@ mod command_tests {
     #[test]
     fn without_echo_message_we_record_our_own_message_ourselves() {
         let mut client = ready(b":s CAP * NAK :echo-message\r\n");
-        client.command(Command::Message {
+        client.command(Command::SendMessage {
             target: "#obby".to_string(),
             text: "hello".to_string(),
         });
@@ -2094,7 +2274,7 @@ mod command_tests {
     #[test]
     fn with_echo_message_we_wait_for_the_server_rather_than_double_up() {
         let mut client = ready(b":s CAP * ACK :echo-message\r\n");
-        client.command(Command::Message {
+        client.command(Command::SendMessage {
             target: "#obby".to_string(),
             text: "hello".to_string(),
         });
@@ -2111,7 +2291,7 @@ mod command_tests {
     #[test]
     fn an_action_is_wrapped_as_ctcp_and_read_back_as_one() {
         let mut client = ready(b":s CAP * NAK :echo-message\r\n");
-        client.command(Command::Action {
+        client.command(Command::SendAction {
             target: "#obby".to_string(),
             text: "waves".to_string(),
         });
@@ -2152,7 +2332,7 @@ mod command_tests {
     #[test]
     fn clearing_a_topic_is_distinguishable_from_asking_for_one() {
         let mut client = ready(b":s CAP * NAK :echo-message\r\n");
-        client.command(Command::Topic {
+        client.command(Command::SetTopic {
             channel: "#obby".to_string(),
             topic: None,
         });
@@ -2165,7 +2345,7 @@ mod command_tests {
     #[test]
     fn a_reaction_names_the_message_it_reacts_to() {
         let mut client = ready(b":s CAP * NAK :echo-message\r\n");
-        client.command(Command::React {
+        client.command(Command::AddReaction {
             target: "#obby".to_string(),
             msgid: "m1".to_string(),
             emoji: "👍".to_string(),
@@ -2179,7 +2359,7 @@ mod command_tests {
     #[test]
     fn typing_says_how_far_along_we_are() {
         let mut client = ready(b":s CAP * NAK :echo-message\r\n");
-        client.command(Command::Typing {
+        client.command(Command::SetTyping {
             target: "#obby".to_string(),
             state: Typing::Active,
         });
@@ -2189,14 +2369,14 @@ mod command_tests {
     #[test]
     fn asking_for_history_pages_backwards_from_a_message() {
         let mut client = ready(b":s CAP * NAK :echo-message\r\n");
-        client.command(Command::History {
+        client.command(Command::FetchHistory {
             target: "#obby".to_string(),
             before: None,
             limit: 50,
         });
         assert!(sent(&mut client).contains("CHATHISTORY LATEST #obby * 50"));
 
-        client.command(Command::History {
+        client.command(Command::FetchHistory {
             target: "#obby".to_string(),
             before: Some("m1".to_string()),
             limit: 50,
@@ -2207,7 +2387,7 @@ mod command_tests {
     #[test]
     fn a_raw_line_that_will_not_parse_is_not_sent() {
         let mut client = ready(b":s CAP * NAK :echo-message\r\n");
-        client.command(Command::Raw {
+        client.command(Command::SendRawLine {
             line: String::new(),
         });
         assert_eq!(
@@ -2305,10 +2485,10 @@ mod resume_tests {
     #[test]
     fn capabilities_are_renegotiated_rather_than_assumed_to_survive() {
         let mut client = established();
-        assert!(client.caps().has("draft/chathistory"));
+        assert!(client.capabilities().has("draft/chathistory"));
         client.handle_disconnected();
         assert!(
-            !client.caps().has("draft/chathistory"),
+            !client.capabilities().has("draft/chathistory"),
             "the new link is a new negotiation; assuming otherwise sends commands the server never agreed to"
         );
     }
@@ -2328,7 +2508,7 @@ mod standard_reply_tests {
     fn a_failure_carries_its_code_and_description() {
         assert_eq!(
             first_reply(b":s FAIL JOIN CHANNEL_FULL #obby :Channel is full\r\n"),
-            Event::Reply {
+            Event::ServerReply {
                 severity: Severity::Fail,
                 command: "JOIN".to_string(),
                 code: "CHANNEL_FULL".to_string(),
@@ -2341,20 +2521,21 @@ mod standard_reply_tests {
     #[test]
     fn a_reply_with_no_context_still_parses() {
         assert_eq!(
-            first_reply(b":s WARN * ACCOUNT_REQUIRED :Log in for more\r\n"),
-            Event::Reply {
+            first_reply(b":s WARN * ACCOUNT_REQUIRED :MessageLog in for more\r\n"),
+            Event::ServerReply {
                 severity: Severity::Warn,
                 command: "*".to_string(),
                 code: "ACCOUNT_REQUIRED".to_string(),
                 context: Vec::new(),
-                text: "Log in for more".to_string(),
+                text: "MessageLog in for more".to_string(),
             }
         );
     }
 
     #[test]
     fn a_note_is_reported_without_being_treated_as_an_error() {
-        let Event::Reply { severity, .. } = first_reply(b":s NOTE * HELLO :Welcome\r\n") else {
+        let Event::ServerReply { severity, .. } = first_reply(b":s NOTE * HELLO :Welcome\r\n")
+        else {
             panic!("a NOTE is a standard reply");
         };
         assert_eq!(severity, Severity::Note);
@@ -2364,7 +2545,7 @@ mod standard_reply_tests {
     fn a_reply_missing_its_code_is_dropped_rather_than_half_reported() {
         let mut client = Client::new(Config::new("me"));
         client.handle_bytes(b":s FAIL\r\n");
-        assert!(matches!(client.poll_event(), Some(Event::Raw { .. })));
+        assert!(matches!(client.poll_event(), Some(Event::RawLine { .. })));
     }
 }
 
@@ -2436,7 +2617,7 @@ mod typing_tests {
         assert!(
             client
                 .poll_event()
-                .is_some_and(|event| matches!(event, Event::Typing { typing: false, .. }))
+                .is_some_and(|event| matches!(event, Event::TypingChanged { active: false, .. }))
         );
     }
 
@@ -2521,9 +2702,9 @@ mod voice_tests {
     fn an_outbound_frame_rides_the_rtc_tag() {
         let mut client = joined();
         while client.poll_transmit().is_some() {}
-        client.command(Command::Voice {
+        client.command(Command::SendVoiceSignal {
             channel: "^general".to_string(),
-            payload: r#"{"type":"join","channel":"^general"}"#.to_string(),
+            signal_json: r#"{"type":"join","channel":"^general"}"#.to_string(),
         });
         let mut sent = String::new();
         while let Some(bytes) = client.poll_transmit() {

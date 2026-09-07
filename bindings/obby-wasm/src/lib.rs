@@ -5,7 +5,7 @@
 //! in as a JS value, every pending [`Event`] comes out at once as a JS array, and bytes come out
 //! separately from events, matching `poll_transmit` versus `poll_event` in the wrapped API.
 
-use obby_client::{Client, Command, Config, Event, Now};
+use obby_client::{Client, Command, Config, Event, Now, Typing};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -26,6 +26,10 @@ unsafe extern "C" {
     /// A [`Command`], as TypeScript sees it.
     #[wasm_bindgen(typescript_type = "Command")]
     pub type CommandValue;
+
+    /// A [`Typing`] state, as TypeScript sees it.
+    #[wasm_bindgen(typescript_type = "TypingState")]
+    pub type TypingStateValue;
 
     /// Everything drained by [`ObbyClient::poll_events`], as TypeScript sees it.
     #[wasm_bindgen(typescript_type = "ObbyEvent[]")]
@@ -99,8 +103,154 @@ impl ObbyClient {
         self.inner.poll_timeout()
     }
 
-    /// Do something on this connection. `command` is a JS object with the same shape as
-    /// [`Command`].
+    /// Join a channel, with its key when it has one.
+    pub fn join(&mut self, channel: String, key: Option<String>) {
+        self.apply(Command::Join { channel, key });
+    }
+
+    /// Leave a channel, with a reason the others in it see.
+    pub fn part(&mut self, channel: String, reason: Option<String>) {
+        self.apply(Command::Part { channel, reason });
+    }
+
+    /// Say something to a channel or a person.
+    #[wasm_bindgen(js_name = sendMessage)]
+    pub fn send_message(&mut self, target: String, text: String) {
+        self.apply(Command::SendMessage { target, text });
+    }
+
+    /// Send a notice, which by convention must never be auto-replied to.
+    #[wasm_bindgen(js_name = sendNotice)]
+    pub fn send_notice(&mut self, target: String, text: String) {
+        self.apply(Command::SendNotice { target, text });
+    }
+
+    /// Send a `CTCP ACTION`, the third-person form.
+    #[wasm_bindgen(js_name = sendAction)]
+    pub fn send_action(&mut self, target: String, text: String) {
+        self.apply(Command::SendAction { target, text });
+    }
+
+    /// Change our nick.
+    #[wasm_bindgen(js_name = setNick)]
+    pub fn set_nick(&mut self, nick: String) {
+        self.apply(Command::SetNick { nick });
+    }
+
+    /// Set a channel's topic, or ask for the current one by passing nothing.
+    #[wasm_bindgen(js_name = setTopic)]
+    pub fn set_topic(&mut self, channel: String, topic: Option<String>) {
+        self.apply(Command::SetTopic { channel, topic });
+    }
+
+    /// Go away with a message, or come back by passing nothing.
+    #[wasm_bindgen(js_name = setAway)]
+    pub fn set_away(&mut self, message: Option<String>) {
+        self.apply(Command::SetAway { message });
+    }
+
+    /// Tell a target we are composing, paused, or done.
+    #[wasm_bindgen(js_name = setTyping)]
+    pub fn set_typing(&mut self, target: String, state: TypingStateValue) -> Result<(), JsValue> {
+        let state: Typing = serde_wasm_bindgen::from_value(state.into())?;
+        self.apply(Command::SetTyping { target, state });
+        Ok(())
+    }
+
+    /// React to a message with an emoji.
+    #[wasm_bindgen(js_name = addReaction)]
+    pub fn add_reaction(&mut self, target: String, msgid: String, emoji: String) {
+        self.apply(Command::AddReaction {
+            target,
+            msgid,
+            emoji,
+        });
+    }
+
+    /// Take one of our reactions back.
+    #[wasm_bindgen(js_name = removeReaction)]
+    pub fn remove_reaction(&mut self, target: String, msgid: String, emoji: String) {
+        self.apply(Command::RemoveReaction {
+            target,
+            msgid,
+            emoji,
+        });
+    }
+
+    /// Ask the server to redact a message.
+    #[wasm_bindgen(js_name = redactMessage)]
+    pub fn redact_message(&mut self, target: String, msgid: String, reason: Option<String>) {
+        self.apply(Command::RedactMessage {
+            target,
+            msgid,
+            reason,
+        });
+    }
+
+    /// Move our read marker in a target, with a `server-time` timestamp.
+    #[wasm_bindgen(js_name = markRead)]
+    pub fn mark_read(&mut self, target: String, timestamp: String) {
+        self.apply(Command::MarkRead { target, timestamp });
+    }
+
+    /// Ask for older messages in a target, before a `server-time` timestamp.
+    #[wasm_bindgen(js_name = fetchHistory)]
+    pub fn fetch_history(&mut self, target: String, before: Option<String>, limit: u16) {
+        self.apply(Command::FetchHistory {
+            target,
+            before,
+            limit,
+        });
+    }
+
+    /// Set one of our own metadata keys, or clear it by passing nothing.
+    #[wasm_bindgen(js_name = setMetadata)]
+    pub fn set_metadata(&mut self, key: String, value: Option<String>) {
+        self.apply(Command::SetMetadata { key, value });
+    }
+
+    /// Subscribe to the metadata keys we want told about.
+    #[wasm_bindgen(js_name = subscribeMetadata)]
+    pub fn subscribe_metadata(&mut self, keys: Vec<String>) {
+        self.apply(Command::SubscribeMetadata { keys });
+    }
+
+    /// Watch nicks, so we hear when they come online.
+    #[wasm_bindgen(js_name = watchNicks)]
+    pub fn watch_nicks(&mut self, nicks: Vec<String>) {
+        self.apply(Command::WatchNicks { nicks });
+    }
+
+    /// Stop watching nicks.
+    #[wasm_bindgen(js_name = unwatchNicks)]
+    pub fn unwatch_nicks(&mut self, nicks: Vec<String>) {
+        self.apply(Command::UnwatchNicks { nicks });
+    }
+
+    /// Send one voice signalling frame, as the JSON the room speaks.
+    #[wasm_bindgen(js_name = sendVoiceSignal)]
+    pub fn send_voice_signal(&mut self, channel: String, signal_json: String) {
+        self.apply(Command::SendVoiceSignal {
+            channel,
+            signal_json,
+        });
+    }
+
+    /// Leave the server, with a reason the others see.
+    pub fn quit(&mut self, reason: Option<String>) {
+        self.apply(Command::Quit { reason });
+    }
+
+    /// Send one raw protocol line, for anything this API does not name.
+    #[wasm_bindgen(js_name = sendRawLine)]
+    pub fn send_raw_line(&mut self, line: String) {
+        self.apply(Command::SendRawLine { line });
+    }
+
+    /// Do anything, as a [`Command`] object.
+    ///
+    /// Every command also has a method of its own, such as [`Self::join`]; this is the one call
+    /// that takes a command a host built itself.
     pub fn command(&mut self, command: CommandValue) -> Result<(), JsValue> {
         let command: Command = serde_wasm_bindgen::from_value(command.into())?;
         self.apply(command);
@@ -221,7 +371,7 @@ mod tests {
     #[test]
     fn command_forwards_to_the_engine() {
         let mut client = new_client();
-        client.apply(Command::Nick {
+        client.apply(Command::SetNick {
             nick: "other".to_string(),
         });
         let sent = client.poll_transmit().expect("a NICK command is sent");

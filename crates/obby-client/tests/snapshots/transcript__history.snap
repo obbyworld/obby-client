@@ -21,9 +21,9 @@ casemapping: Rfc1459
 
 == events ==
 Registered { nick: "me" }
-Isupport { token: "CASEMAPPING", value: Some("rfc1459") }
-Isupport { token: "CHANTYPES", value: Some("#") }
-Changed { change: Joined { channel: "#obby" } }
-Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788696000000, seq: 0 } } }
-Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788687000000, seq: 1 } } }
-Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788685200000, seq: 2 } } }
+IsupportToken { token: "CASEMAPPING", value: Some("rfc1459") }
+IsupportToken { token: "CHANTYPES", value: Some("#") }
+ModelChanged { change: ChannelJoined { channel: "#obby" } }
+ModelChanged { change: MessageAdded { target: "#obby", key: MessageKey { time_ms: 1788696000000, seq: 0 } } }
+ModelChanged { change: MessageAdded { target: "#obby", key: MessageKey { time_ms: 1788687000000, seq: 1 } } }
+ModelChanged { change: MessageAdded { target: "#obby", key: MessageKey { time_ms: 1788685200000, seq: 2 } } }

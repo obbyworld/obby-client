@@ -8,7 +8,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use obby_proto::{CaseFolded, Casemapping, Isupport, Message as Line, parse_channel_modes};
 
-use crate::model::{Message, MessageKind, Model};
+use crate::model::{ChatMessage, MessageKind, Model};
 
 /// What changed, for a host that wants to react without diffing the whole model.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,29 +19,29 @@ use crate::model::{Message, MessageKind, Model};
 #[non_exhaustive]
 pub enum Change {
     /// A message landed in a channel or a conversation.
-    Message {
+    MessageAdded {
         /// The channel or nick it belongs to, as the server spells it.
         target: String,
         /// Where it sits in that target's log.
         key: crate::model::MessageKey,
     },
     /// We joined a channel.
-    Joined {
+    ChannelJoined {
         /// The channel.
         channel: String,
     },
     /// We left a channel, whether by choice or by being removed.
-    Parted {
+    ChannelParted {
         /// The channel.
         channel: String,
     },
     /// A channel's member list changed.
-    MembersChanged {
+    ChannelMembersChanged {
         /// The channel.
         channel: String,
     },
     /// A channel's topic changed.
-    TopicChanged {
+    ChannelTopicChanged {
         /// The channel.
         channel: String,
     },
@@ -53,31 +53,31 @@ pub enum Change {
         to: String,
     },
     /// A channel's modes changed.
-    ModesChanged {
+    ChannelModesChanged {
         /// The channel.
         channel: String,
     },
     /// The server confirmed how far we have read, so the unread counts moved.
-    ReadMarker {
+    ReadMarkerMoved {
         /// The channel or person.
         target: String,
     },
     /// A message gained or lost a reaction.
-    Reacted {
+    MessageReacted {
         /// Where the message is.
         target: String,
         /// The message reacted to.
         msgid: String,
     },
     /// A message was deleted.
-    Redacted {
+    MessageRedacted {
         /// Where the message was.
         target: String,
         /// The message deleted.
         msgid: String,
     },
     /// A metadata key changed on a person, a channel, or us.
-    Metadata {
+    MetadataChanged {
         /// Whose metadata changed.
         target: String,
         /// The key that changed.
@@ -219,7 +219,7 @@ fn message(ctx: &mut Context<'_>, line: &Line, command: &str) -> Vec<Change> {
 
     let sender = Context::sender(line);
     let time_ms = ctx.stamp(line);
-    let key = ctx.model.next_key(time_ms);
+    let key = ctx.model.next_message_key(time_ms);
     let body = if command == "TAGMSG" {
         String::new()
     } else {
@@ -240,7 +240,7 @@ fn message(ctx: &mut Context<'_>, line: &Line, command: &str) -> Vec<Change> {
         },
     };
 
-    let mut message = Message::new(key, sender.clone(), kind);
+    let mut message = ChatMessage::new(key, sender.clone(), kind);
     message.text = text;
     message.msgid = line.tag("msgid").map(ToString::to_string);
     message.account = line.tag("account").map(ToString::to_string);
@@ -277,7 +277,7 @@ fn message(ctx: &mut Context<'_>, line: &Line, command: &str) -> Vec<Change> {
         return Vec::new();
     }
     let accepted = if is_channel {
-        let channel = ctx.model.channel_mut(folded, &name);
+        let channel = ctx.model.channel_or_insert(folded, &name);
         let accepted = channel.log.insert(message);
         if accepted && counts {
             channel.unread = channel.unread.saturating_add(1);
@@ -287,7 +287,7 @@ fn message(ctx: &mut Context<'_>, line: &Line, command: &str) -> Vec<Change> {
         }
         accepted
     } else {
-        let query = ctx.model.conversation_mut(folded, &name);
+        let query = ctx.model.conversation_or_insert(folded, &name);
         let accepted = query.log.insert(message);
         if accepted && counts {
             // a private message is addressed to us by existing at all
@@ -297,7 +297,7 @@ fn message(ctx: &mut Context<'_>, line: &Line, command: &str) -> Vec<Change> {
     };
 
     if accepted {
-        alloc::vec![Change::Message { target: name, key }]
+        alloc::vec![Change::MessageAdded { target: name, key }]
     } else {
         Vec::new()
     }
@@ -312,8 +312,8 @@ fn join(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
     let folded = ctx.fold(&name);
 
     if ctx.is_me(&who) {
-        ctx.model.channel_mut(folded, &name);
-        return alloc::vec![Change::Joined { channel: name }];
+        ctx.model.channel_or_insert(folded, &name);
+        return alloc::vec![Change::ChannelJoined { channel: name }];
     }
 
     let account = line.param(1).filter(|a| *a != "*").map(ToString::to_string);
@@ -323,16 +323,16 @@ fn join(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
     if ctx.model.channel(&folded).is_none() {
         return Vec::new();
     }
-    let person = ctx.model.person_mut(key.clone(), &who);
+    let person = ctx.model.person_or_insert(key.clone(), &who);
     person.nick = who;
     // extended-join carries the account on the JOIN itself, sparing us a WHO for it
     if account.is_some() {
         person.account = account;
     }
-    if let Some(channel) = ctx.model.existing_channel_mut(&folded) {
+    if let Some(channel) = ctx.model.channel_mut(&folded) {
         channel.members.entry(key).or_default();
     }
-    alloc::vec![Change::MembersChanged { channel: name }]
+    alloc::vec![Change::ChannelMembersChanged { channel: name }]
 }
 
 fn part(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
@@ -345,13 +345,13 @@ fn part(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
 
     if ctx.is_me(&who) {
         ctx.model.remove_channel(&folded);
-        return alloc::vec![Change::Parted { channel: name }];
+        return alloc::vec![Change::ChannelParted { channel: name }];
     }
-    if let Some(channel) = ctx.model.existing_channel_mut(&folded) {
+    if let Some(channel) = ctx.model.channel_mut(&folded) {
         channel.members.remove(&ctx.isupport.fold(&who));
     }
     ctx.model.forget_strangers();
-    alloc::vec![Change::MembersChanged { channel: name }]
+    alloc::vec![Change::ChannelMembersChanged { channel: name }]
 }
 
 fn quit(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
@@ -363,7 +363,7 @@ fn quit(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
         .filter_map(|key| {
             ctx.model
                 .channel(&key)
-                .map(|channel| Change::MembersChanged {
+                .map(|channel| Change::ChannelMembersChanged {
                     channel: channel.name.clone(),
                 })
         })
@@ -379,14 +379,14 @@ fn kick(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
 
     if ctx.is_me(target) {
         ctx.model.remove_channel(&folded);
-        return alloc::vec![Change::Parted { channel: name }];
+        return alloc::vec![Change::ChannelParted { channel: name }];
     }
     let removed = ctx.isupport.fold(target);
-    if let Some(channel) = ctx.model.existing_channel_mut(&folded) {
+    if let Some(channel) = ctx.model.channel_mut(&folded) {
         channel.members.remove(&removed);
     }
     ctx.model.forget_strangers();
-    alloc::vec![Change::MembersChanged { channel: name }]
+    alloc::vec![Change::ChannelMembersChanged { channel: name }]
 }
 
 fn nick(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
@@ -409,12 +409,12 @@ fn topic(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
     let folded = ctx.fold(&name);
     let who = Context::sender(line);
     let text = line.param(1).unwrap_or_default().to_string();
-    let Some(entry) = ctx.model.existing_channel_mut(&folded) else {
+    let Some(entry) = ctx.model.channel_mut(&folded) else {
         return Vec::new();
     };
     entry.topic = (!text.is_empty()).then_some(text);
     entry.topic_by = Some(who);
-    alloc::vec![Change::TopicChanged { channel: name }]
+    alloc::vec![Change::ChannelTopicChanged { channel: name }]
 }
 
 fn topic_reply(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
@@ -424,11 +424,11 @@ fn topic_reply(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
     let name = channel.to_string();
     let folded = ctx.fold(&name);
     let text = line.param(2).unwrap_or_default().to_string();
-    let Some(entry) = ctx.model.existing_channel_mut(&folded) else {
+    let Some(entry) = ctx.model.channel_mut(&folded) else {
         return Vec::new();
     };
     entry.topic = (!text.is_empty()).then_some(text);
-    alloc::vec![Change::TopicChanged { channel: name }]
+    alloc::vec![Change::ChannelTopicChanged { channel: name }]
 }
 
 fn names(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
@@ -461,14 +461,14 @@ fn names(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
             return Vec::new();
         }
         ctx.model
-            .person_mut(key.clone(), &nick)
+            .person_or_insert(key.clone(), &nick)
             .nick
             .clone_from(&nick);
-        if let Some(channel) = ctx.model.existing_channel_mut(&folded) {
+        if let Some(channel) = ctx.model.channel_mut(&folded) {
             channel.members.entry(key).or_default().prefixes = prefixes;
         }
     }
-    alloc::vec![Change::MembersChanged { channel: name }]
+    alloc::vec![Change::ChannelMembersChanged { channel: name }]
 }
 
 /// Apply a reaction carried on a TAGMSG, if that is what this is.
@@ -494,9 +494,9 @@ fn reaction(ctx: &mut Context<'_>, line: &Line) -> Option<Vec<Change>> {
     let name = target.to_string();
     let folded = ctx.fold(&name);
 
-    let log = match ctx.model.existing_channel_mut(&folded) {
+    let log = match ctx.model.channel_mut(&folded) {
         Some(channel) => &mut channel.log,
-        None => &mut ctx.model.existing_conversation_mut(&folded)?.log,
+        None => &mut ctx.model.conversation_mut(&folded)?.log,
     };
     let message = log.get_mut(&msgid)?;
     let reactors = message.reactions.entry(emoji.clone()).or_default();
@@ -510,7 +510,7 @@ fn reaction(ctx: &mut Context<'_>, line: &Line) -> Option<Vec<Change>> {
             message.reactions.remove(&emoji);
         }
     }
-    Some(alloc::vec![Change::Reacted {
+    Some(alloc::vec![Change::MessageReacted {
         target: name,
         msgid
     }])
@@ -530,11 +530,11 @@ fn link_preview(ctx: &mut Context<'_>, line: &Line) -> Option<Vec<Change>> {
     if let Some(name) = line.param(0) {
         let name = name.to_string();
         let folded = ctx.fold(&name);
-        let log = match ctx.model.existing_channel_mut(&folded) {
+        let log = match ctx.model.channel_mut(&folded) {
             Some(channel) => Some(&mut channel.log),
             None => ctx
                 .model
-                .existing_conversation_mut(&folded)
+                .conversation_mut(&folded)
                 .map(|query| &mut query.log),
         };
         if let Some(log) = log
@@ -542,7 +542,7 @@ fn link_preview(ctx: &mut Context<'_>, line: &Line) -> Option<Vec<Change>> {
         {
             message.link_preview = Some(preview);
             let key = message.key;
-            changes.push(Change::Message { target: name, key });
+            changes.push(Change::MessageAdded { target: name, key });
         }
     }
     Some(changes)
@@ -560,12 +560,9 @@ fn redact(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
     let folded = ctx.fold(&name);
     let msgid = msgid.to_string();
 
-    let Some(log) = (match ctx.model.existing_channel_mut(&folded) {
+    let Some(log) = (match ctx.model.channel_mut(&folded) {
         Some(channel) => Some(&mut channel.log),
-        None => ctx
-            .model
-            .existing_conversation_mut(&folded)
-            .map(|q| &mut q.log),
+        None => ctx.model.conversation_mut(&folded).map(|q| &mut q.log),
     }) else {
         return Vec::new();
     };
@@ -573,7 +570,7 @@ fn redact(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
         return Vec::new();
     };
     message.redacted = true;
-    alloc::vec![Change::Redacted {
+    alloc::vec![Change::MessageRedacted {
         target: name,
         msgid
     }]
@@ -613,18 +610,18 @@ fn metadata(ctx: &mut Context<'_>, line: &Line, offset: usize) -> Vec<Change> {
     };
 
     if ctx.isupport.is_channel(&target) {
-        let Some(channel) = ctx.model.existing_channel_mut(&folded) else {
+        let Some(channel) = ctx.model.channel_mut(&folded) else {
             return Vec::new();
         };
         apply(&mut channel.metadata);
-        return alloc::vec![Change::Metadata { target, key }];
+        return alloc::vec![Change::MetadataChanged { target, key }];
     }
 
-    apply(&mut ctx.model.person_mut(folded, &target).metadata);
+    apply(&mut ctx.model.person_or_insert(folded, &target).metadata);
     if ctx.is_me(&target) {
         apply(&mut ctx.model.me.metadata);
     }
-    alloc::vec![Change::Metadata { target, key }]
+    alloc::vec![Change::MetadataChanged { target, key }]
 }
 
 /// Note that someone went away or came back.
@@ -647,7 +644,7 @@ fn person_changed(
 ) -> Vec<Change> {
     let who = Context::sender(line);
     let key = ctx.fold(&who);
-    change(ctx.model.person_mut(key.clone(), &who));
+    change(ctx.model.person_or_insert(key.clone(), &who));
     if ctx.is_me(&who) {
         let person = ctx.model.person(&key).cloned().unwrap_or_default();
         ctx.model.me.away = person.away;
@@ -656,7 +653,7 @@ fn person_changed(
     ctx.model
         .channels()
         .filter(|(_, channel)| channel.members.contains_key(&key))
-        .map(|(_, channel)| Change::MembersChanged {
+        .map(|(_, channel)| Change::ChannelMembersChanged {
             channel: channel.name.clone(),
         })
         .collect()
@@ -677,16 +674,16 @@ fn mark_read(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
     let folded = ctx.fold(target);
     let name = target.to_string();
 
-    if let Some(channel) = ctx.model.existing_channel_mut(&folded) {
+    if let Some(channel) = ctx.model.channel_mut(&folded) {
         channel.read_marker = Some(marker);
         channel.unread = 0;
         channel.mentions = 0;
-        return alloc::vec![Change::ReadMarker { target: name }];
+        return alloc::vec![Change::ReadMarkerMoved { target: name }];
     }
-    if let Some(query) = ctx.model.existing_conversation_mut(&folded) {
+    if let Some(query) = ctx.model.conversation_mut(&folded) {
         query.read_marker = Some(marker);
         query.unread = 0;
-        return alloc::vec![Change::ReadMarker { target: name }];
+        return alloc::vec![Change::ReadMarkerMoved { target: name }];
     }
     Vec::new()
 }
@@ -794,7 +791,7 @@ fn apply_who(ctx: &mut Context<'_>, row: WhoRow<'_>) -> Vec<Change> {
         .collect();
     let away = row.flags.starts_with('G');
 
-    let person = ctx.model.person_mut(key.clone(), row.nick);
+    let person = ctx.model.person_or_insert(key.clone(), row.nick);
     person.nick = row.nick.to_string();
     person.username = Some(row.user.to_string());
     person.host = Some(row.host.to_string());
@@ -821,11 +818,11 @@ fn apply_who(ctx: &mut Context<'_>, row: WhoRow<'_>) -> Vec<Change> {
     }
     let name = row.channel.to_string();
     let folded = ctx.fold(&name);
-    let Some(entry) = ctx.model.existing_channel_mut(&folded) else {
+    let Some(entry) = ctx.model.channel_mut(&folded) else {
         return Vec::new();
     };
     entry.members.entry(key).or_default().prefixes = prefixes;
-    alloc::vec![Change::MembersChanged { channel: name }]
+    alloc::vec![Change::ChannelMembersChanged { channel: name }]
 }
 
 /// Apply a named mode change.
@@ -843,7 +840,7 @@ fn prop(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
     if !apply_named(ctx, &folded, changes.iter().map(String::as_str)) {
         return Vec::new();
     }
-    alloc::vec![Change::ModesChanged { channel: name }]
+    alloc::vec![Change::ChannelModesChanged { channel: name }]
 }
 
 /// Apply one line of a `PROP` listing, which reports state rather than a change.
@@ -865,7 +862,7 @@ fn prop_list(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
     if !apply_named(ctx, &folded, entries.iter().map(String::as_str)) {
         return Vec::new();
     }
-    alloc::vec![Change::ModesChanged { channel: name }]
+    alloc::vec![Change::ChannelModesChanged { channel: name }]
 }
 
 /// Fold `+name[=param]` and `-name` entries into a channel's named modes.
@@ -877,7 +874,7 @@ fn apply_named<'a>(
     folded: &CaseFolded,
     entries: impl Iterator<Item = &'a str>,
 ) -> bool {
-    let Some(channel) = ctx.model.existing_channel_mut(folded) else {
+    let Some(channel) = ctx.model.channel_mut(folded) else {
         return false;
     };
     for entry in entries {
@@ -928,7 +925,7 @@ fn mode(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
             let key = ctx.isupport.fold(&nick);
             if let Some(member) = ctx
                 .model
-                .existing_channel_mut(&folded)
+                .channel_mut(&folded)
                 .and_then(|channel| channel.members.get_mut(&key))
             {
                 if change.set {
@@ -940,7 +937,7 @@ fn mode(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
             }
             continue;
         }
-        let Some(channel) = ctx.model.existing_channel_mut(&folded) else {
+        let Some(channel) = ctx.model.channel_mut(&folded) else {
             continue;
         };
         if change.set {
@@ -952,13 +949,13 @@ fn mode(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
 
     if touched_members {
         alloc::vec![
-            Change::ModesChanged {
+            Change::ChannelModesChanged {
                 channel: name.clone()
             },
-            Change::MembersChanged { channel: name },
+            Change::ChannelMembersChanged { channel: name },
         ]
     } else {
-        alloc::vec![Change::ModesChanged { channel: name }]
+        alloc::vec![Change::ChannelModesChanged { channel: name }]
     }
 }
 
@@ -1042,7 +1039,7 @@ mod tests {
         let mut h = Harness::new().joined("#obby");
         let changes = h.feed(":bob!u@h PRIVMSG #obby :hello");
         assert!(
-            matches!(changes.first(), Some(Change::Message { target, .. }) if target == "#obby")
+            matches!(changes.first(), Some(Change::MessageAdded { target, .. }) if target == "#obby")
         );
         let message = h.channel("#obby").log.last().expect("a message");
         assert_eq!(message.text, "hello");
@@ -1075,7 +1072,7 @@ mod tests {
         let mut h = Harness::new();
         assert_eq!(
             h.feed(":me!u@h JOIN #obby"),
-            [Change::Joined {
+            [Change::ChannelJoined {
                 channel: "#obby".to_string()
             }]
         );
@@ -1391,7 +1388,7 @@ mod tests {
         let changes = h.feed(":s MARKREAD #obby timestamp=2026-09-06T10:00:00.000Z");
         assert_eq!(
             changes,
-            [Change::ReadMarker {
+            [Change::ReadMarkerMoved {
                 target: "#obby".to_string()
             }]
         );
@@ -1412,7 +1409,7 @@ mod tests {
         let changes = h.feed("@+draft/react=👍;+draft/reply=m1 :carol!u@h TAGMSG #obby");
         assert_eq!(
             changes,
-            [Change::Reacted {
+            [Change::MessageReacted {
                 target: "#obby".to_string(),
                 msgid: "m1".to_string()
             }]
@@ -1465,7 +1462,7 @@ mod tests {
         let changes = h.feed(":op!u@h REDACT #obby m1 :spam");
         assert_eq!(
             changes,
-            [Change::Redacted {
+            [Change::MessageRedacted {
                 target: "#obby".to_string(),
                 msgid: "m1".to_string()
             }]
@@ -1552,7 +1549,7 @@ mod tests {
         let changes = h.feed(":s METADATA bob display-name * :Bobby Tables");
         assert_eq!(
             changes,
-            [Change::Metadata {
+            [Change::MetadataChanged {
                 target: "bob".to_string(),
                 key: "display-name".to_string()
             }]
@@ -1622,10 +1619,10 @@ mod tests {
     #[test]
     fn a_star_target_means_us() {
         let mut h = Harness::new();
-        h.feed(":s METADATA * display-name * :Me Myself");
+        h.feed(":s METADATA * display-name * :LocalUser Myself");
         assert_eq!(
             h.model.me.metadata.get("display-name").map(String::as_str),
-            Some("Me Myself")
+            Some("LocalUser Myself")
         );
     }
 
@@ -1767,7 +1764,7 @@ mod tests {
         let changes = h.feed(":s PROP #obby +obsidianirc/censor +obsidianirc/history=30d");
         assert_eq!(
             changes,
-            [Change::ModesChanged {
+            [Change::ChannelModesChanged {
                 channel: "#obby".to_string()
             }]
         );

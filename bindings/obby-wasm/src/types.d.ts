@@ -151,7 +151,7 @@ export type ChatMessage = {
 /**
  * Where it sits in the log.
  */
-key: MessageOrder, 
+key: MessageKey, 
 /**
  * The network-unique id, when the server assigned one.
  */
@@ -237,7 +237,7 @@ channel: string,
 /**
  * Why, shown to the others in it.
  */
-reason: string | null, } | { "type": "message", 
+reason: string | null, } | { "type": "send_message", 
 /**
  * Where to say it.
  */
@@ -245,7 +245,7 @@ target: string,
 /**
  * What to say.
  */
-text: string, } | { "type": "notice", 
+text: string, } | { "type": "send_notice", 
 /**
  * Where to send it.
  */
@@ -253,7 +253,7 @@ target: string,
 /**
  * What to send.
  */
-text: string, } | { "type": "action", 
+text: string, } | { "type": "send_action", 
 /**
  * Where to send it.
  */
@@ -261,11 +261,11 @@ target: string,
 /**
  * What we are doing.
  */
-text: string, } | { "type": "nick", 
+text: string, } | { "type": "set_nick", 
 /**
  * The nick to take.
  */
-nick: string, } | { "type": "topic", 
+nick: string, } | { "type": "set_topic", 
 /**
  * The channel.
  */
@@ -273,11 +273,11 @@ channel: string,
 /**
  * The new topic, or nothing to clear it.
  */
-topic: string | null, } | { "type": "away", 
+topic: string | null, } | { "type": "set_away", 
 /**
  * The away message, or nothing to come back.
  */
-message: string | null, } | { "type": "typing", 
+message: string | null, } | { "type": "set_typing", 
 /**
  * Who we are typing to.
  */
@@ -285,7 +285,7 @@ target: string,
 /**
  * How far along we are.
  */
-state: TypingState, } | { "type": "react", 
+state: TypingState, } | { "type": "add_reaction", 
 /**
  * The channel or person the message is in.
  */
@@ -297,7 +297,7 @@ msgid: string,
 /**
  * The emoji.
  */
-emoji: string, } | { "type": "unreact", 
+emoji: string, } | { "type": "remove_reaction", 
 /**
  * The channel or person the message is in.
  */
@@ -309,7 +309,7 @@ msgid: string,
 /**
  * The emoji to remove.
  */
-emoji: string, } | { "type": "redact", 
+emoji: string, } | { "type": "redact_message", 
 /**
  * Where the message is.
  */
@@ -329,7 +329,7 @@ target: string,
 /**
  * The `server-time` of the last message read.
  */
-timestamp: string, } | { "type": "history", 
+timestamp: string, } | { "type": "fetch_history", 
 /**
  * The channel or person.
  */
@@ -353,15 +353,15 @@ value: string | null, } | { "type": "subscribe_metadata",
 /**
  * The keys to watch.
  */
-keys: Array<string>, } | { "type": "watch", 
+keys: Array<string>, } | { "type": "watch_nicks", 
 /**
  * The nicks to watch.
  */
-nicks: Array<string>, } | { "type": "unwatch", 
+nicks: Array<string>, } | { "type": "unwatch_nicks", 
 /**
  * The nicks to stop watching.
  */
-nicks: Array<string>, } | { "type": "voice", 
+nicks: Array<string>, } | { "type": "send_voice_signal", 
 /**
  * The channel to signal in.
  */
@@ -369,11 +369,11 @@ channel: string,
 /**
  * The frame, already encoded as the JSON that travels in the tag.
  */
-payload: string, } | { "type": "quit", 
+signal_json: string, } | { "type": "quit", 
 /**
  * Why.
  */
-reason: string | null, } | { "type": "raw", 
+reason: string | null, } | { "type": "send_raw_line", 
 /**
  * The line, without its terminator.
  */
@@ -539,6 +539,23 @@ export type Membership = {
 prefixes: string, };
 
 /**
+ * Where a message is ordered and how it is found again.
+ *
+ * Ordering is by the server's timestamp, with a monotonic sequence number breaking ties. A tie
+ * broken by arrival order alone is what the reference client relies on, and it only holds there
+ * because of an incidental property of the sort it uses.
+ */
+export type MessageKey = { 
+/**
+ * Milliseconds since the epoch, from `server-time` when the server sent one.
+ */
+time_ms: number, 
+/**
+ * Assigned in arrival order, unique for the life of the connection.
+ */
+seq: number, };
+
+/**
  * What kind of thing happened.
  */
 export type MessageKind = { "type": "privmsg" } | { "type": "notice" } | { "type": "ctcp", 
@@ -558,24 +575,7 @@ new_nick: string, } | { "type": "topic" } | { "type": "mode" };
 /**
  * The messages of one channel or conversation, ordered and bounded.
  */
-export type MessageLog = { messages: Array<ChatMessage>, by_msgid: { [key in string]?: MessageOrder }, retention: number, };
-
-/**
- * Where a message is ordered and how it is found again.
- *
- * Ordering is by the server's timestamp, with a monotonic sequence number breaking ties. A tie
- * broken by arrival order alone is what the reference client relies on, and it only holds there
- * because of an incidental property of the sort it uses.
- */
-export type MessageOrder = { 
-/**
- * Milliseconds since the epoch, from `server-time` when the server sent one.
- */
-time_ms: number, 
-/**
- * Assigned in arrival order, unique for the life of the connection.
- */
-seq: number, };
+export type MessageLog = { messages: Array<ChatMessage>, by_msgid: { [key in string]?: MessageKey }, retention: number, };
 
 /**
  * Where a message came from, as sent in the `:`-prefixed source.
@@ -631,7 +631,7 @@ me: LocalUser, channels: { [key in CaseFolded]?: Channel }, conversations: { [ke
 /**
  * What changed, for a host that wants to react without diffing the whole model.
  */
-export type ModelChange = { "type": "message", 
+export type ModelChange = { "type": "message_added", 
 /**
  * The channel or nick it belongs to, as the server spells it.
  */
@@ -639,19 +639,19 @@ target: string,
 /**
  * Where it sits in that target's log.
  */
-key: MessageOrder, } | { "type": "joined", 
+key: MessageKey, } | { "type": "channel_joined", 
 /**
  * The channel.
  */
-channel: string, } | { "type": "parted", 
+channel: string, } | { "type": "channel_parted", 
 /**
  * The channel.
  */
-channel: string, } | { "type": "members_changed", 
+channel: string, } | { "type": "channel_members_changed", 
 /**
  * The channel.
  */
-channel: string, } | { "type": "topic_changed", 
+channel: string, } | { "type": "channel_topic_changed", 
 /**
  * The channel.
  */
@@ -663,15 +663,15 @@ from: string,
 /**
  * What they are called now.
  */
-to: string, } | { "type": "modes_changed", 
+to: string, } | { "type": "channel_modes_changed", 
 /**
  * The channel.
  */
-channel: string, } | { "type": "read_marker", 
+channel: string, } | { "type": "read_marker_moved", 
 /**
  * The channel or person.
  */
-target: string, } | { "type": "reacted", 
+target: string, } | { "type": "message_reacted", 
 /**
  * Where the message is.
  */
@@ -679,7 +679,7 @@ target: string,
 /**
  * The message reacted to.
  */
-msgid: string, } | { "type": "redacted", 
+msgid: string, } | { "type": "message_redacted", 
 /**
  * Where the message was.
  */
@@ -687,7 +687,7 @@ target: string,
 /**
  * The message deleted.
  */
-msgid: string, } | { "type": "metadata", 
+msgid: string, } | { "type": "metadata_changed", 
 /**
  * Whose metadata changed.
  */
@@ -704,7 +704,7 @@ key: string, };
  * a callback needs a different lifetime, threading and re-entrancy contract in every language this
  * engine is bound into.
  */
-export type ObbyEvent = { "type": "cap_acknowledged", 
+export type ObbyEvent = { "type": "capabilities_acknowledged", 
 /**
  * The capability names, as acknowledged.
  */
@@ -712,7 +712,7 @@ names: Array<string>, } | { "type": "registered",
 /**
  * The nick the server actually gave us, which may differ from the one we asked for.
  */
-nick: string, } | { "type": "isupport", 
+nick: string, } | { "type": "isupport_token", 
 /**
  * The token name, such as `CHANMODES`.
  */
@@ -736,19 +736,19 @@ refused: string,
 /**
  * What is being tried instead.
  */
-trying: string, } | { "type": "changed", 
+trying: string, } | { "type": "model_changed", 
 /**
  * What changed.
  */
-change: ModelChange, } | { "type": "link_dead" } | { "type": "reconnect", 
+change: ModelChange, } | { "type": "link_dead" } | { "type": "reconnect_after", 
 /**
  * How long the host should wait first.
  */
-after_ms: number, } | { "type": "reconnect_gave_up" } | { "type": "command_timed_out", 
+after_ms: number, } | { "type": "reconnect_abandoned" } | { "type": "command_timed_out", 
 /**
  * The command that went unanswered.
  */
-command: string, } | { "type": "commands_changed" } | { "type": "voice", 
+command: string, } | { "type": "allowed_commands_changed" } | { "type": "voice", 
 /**
  * The channel the room belongs to.
  */
@@ -756,7 +756,7 @@ channel: string,
 /**
  * The frame.
  */
-signal: VoiceSignal, } | { "type": "typing", 
+signal: VoiceSignal, } | { "type": "typing_changed", 
 /**
  * The channel or conversation they are composing in.
  */
@@ -768,7 +768,7 @@ nick: string,
 /**
  * True when they are composing now.
  */
-typing: boolean, } | { "type": "presence", 
+active: boolean, } | { "type": "presence_changed", 
 /**
  * Who.
  */
@@ -776,7 +776,7 @@ nick: string,
 /**
  * True when they are here now.
  */
-online: boolean, } | { "type": "reply", 
+online: boolean, } | { "type": "server_reply", 
 /**
  * How serious it is.
  */
@@ -796,7 +796,7 @@ context: Array<string>,
 /**
  * The human-readable description.
  */
-text: string, } | { "type": "raw", 
+text: string, } | { "type": "raw_line", 
 /**
  * The parsed line.
  */

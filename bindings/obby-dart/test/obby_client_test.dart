@@ -56,13 +56,49 @@ void main() {
     addTearDown(client.close);
     while (client.pollTransmit() != null) {}
 
-    expect(client.command({'type': 'nick', 'nick': 'other'}), isTrue);
+    expect(client.command({'type': 'set_nick', 'nick': 'other'}), isTrue);
     expect(utf8.decode(client.pollTransmit()!), 'NICK other\r\n');
     expect(
       client.command({'type': 'not_a_real_command'}),
       isFalse,
       reason: 'an unreadable command must be reported, not silently dropped',
     );
+  });
+
+  test('join sends a JOIN', () {
+    final client = open();
+    addTearDown(client.close);
+    while (client.pollTransmit() != null) {}
+
+    expect(client.join('#obby'), isTrue);
+    expect(utf8.decode(client.pollTransmit()!), 'JOIN #obby\r\n');
+  });
+
+  test('sendMessage sends a PRIVMSG', () {
+    final client = open();
+    addTearDown(client.close);
+    while (client.pollTransmit() != null) {}
+
+    expect(client.sendMessage('#obby', 'hello there'), isTrue);
+    expect(utf8.decode(client.pollTransmit()!), 'PRIVMSG #obby :hello there\r\n');
+  });
+
+  test('setTyping sends a typing tag', () {
+    final client = open();
+    addTearDown(client.close);
+    while (client.pollTransmit() != null) {}
+
+    expect(client.setTyping('#obby', TypingState.active), isTrue);
+    expect(utf8.decode(client.pollTransmit()!), contains('+typing=active'));
+  });
+
+  test('quit sends a QUIT', () {
+    final client = open();
+    addTearDown(client.close);
+    while (client.pollTransmit() != null) {}
+
+    expect(client.quit(reason: 'see you later'), isTrue);
+    expect(utf8.decode(client.pollTransmit()!), 'QUIT :see you later\r\n');
   });
 
   test('a timeout is reported once something is scheduled', () {

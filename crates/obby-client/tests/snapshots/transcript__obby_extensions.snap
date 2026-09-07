@@ -36,24 +36,24 @@ kind Publish, 0 participants
 JOIN PART TOPIC
 
 == events ==
-CapAcknowledged { names: ["message-tags"] }
-CapAcknowledged { names: ["server-time"] }
-CapAcknowledged { names: ["batch"] }
-CapAcknowledged { names: ["draft/named-modes"] }
-CapAcknowledged { names: ["obsidianirc/cmdslist"] }
-CapAcknowledged { names: ["obsidianirc/voice"] }
+CapabilitiesAcknowledged { names: ["message-tags"] }
+CapabilitiesAcknowledged { names: ["server-time"] }
+CapabilitiesAcknowledged { names: ["batch"] }
+CapabilitiesAcknowledged { names: ["draft/named-modes"] }
+CapabilitiesAcknowledged { names: ["obsidianirc/cmdslist"] }
+CapabilitiesAcknowledged { names: ["obsidianirc/voice"] }
 Registered { nick: "me" }
-Isupport { token: "CASEMAPPING", value: Some("ascii") }
-Isupport { token: "CHANTYPES", value: Some("#^$") }
-Isupport { token: "PREFIX", value: Some("(qaohv)~&@%+") }
-Isupport { token: "CHANMODES", value: Some("beI,k,l,imnpst") }
-Isupport { token: "WHOX", value: None }
-CommandsChanged
-CommandsChanged
-Changed { change: Joined { channel: "#obby" } }
-Changed { change: MembersChanged { channel: "#obby" } }
-Changed { change: ModesChanged { channel: "#obby" } }
-Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
-Changed { change: Message { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
-Changed { change: Joined { channel: "^general" } }
+IsupportToken { token: "CASEMAPPING", value: Some("ascii") }
+IsupportToken { token: "CHANTYPES", value: Some("#^$") }
+IsupportToken { token: "PREFIX", value: Some("(qaohv)~&@%+") }
+IsupportToken { token: "CHANMODES", value: Some("beI,k,l,imnpst") }
+IsupportToken { token: "WHOX", value: None }
+AllowedCommandsChanged
+AllowedCommandsChanged
+ModelChanged { change: ChannelJoined { channel: "#obby" } }
+ModelChanged { change: ChannelMembersChanged { channel: "#obby" } }
+ModelChanged { change: ChannelModesChanged { channel: "#obby" } }
+ModelChanged { change: MessageAdded { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
+ModelChanged { change: MessageAdded { target: "#obby", key: MessageKey { time_ms: 1788688800000, seq: 0 } } }
+ModelChanged { change: ChannelJoined { channel: "^general" } }
 Voice { channel: "^general", signal: Join { channel: "^general" } }
