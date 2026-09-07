@@ -620,10 +620,10 @@ pub unsafe extern "C" fn obby_client_new(config: *const ObbyConfig) -> *mut Obby
 
     let mut settings = Config::new(nick);
     if let Some(username) = unsafe { str_from_ptr(config.username) } {
-        settings.username = username.to_owned();
+        username.clone_into(&mut settings.username);
     }
     if let Some(realname) = unsafe { str_from_ptr(config.realname) } {
-        settings.realname = realname.to_owned();
+        realname.clone_into(&mut settings.realname);
     }
     settings.password = unsafe { str_from_ptr(config.password) }.map(ToOwned::to_owned);
     if config.retention > 0 {

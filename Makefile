@@ -19,7 +19,9 @@ check: ## the one command to run after every change
 	cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 test: ## unit, integration and doc tests
-	cargo nextest run --workspace --all-features
+	# ts-rs generates one test per exported type, and they all write the same file, which only
+	# holds together in one process. `make ts-types` runs them under cargo test for that reason
+	cargo nextest run --workspace --all-features -E 'not test(/export_bindings_/)'
 	cargo test --doc --workspace
 
 live: ## smoke test against a real server, needs the network
@@ -79,7 +81,7 @@ ts-types: ## regenerate the TypeScript definitions from the Rust types
 	rm -rf crates/obby-client/bindings
 	cargo test -p obby-client --features ts export_bindings
 	cp crates/obby-client/bindings/obby.ts bindings/obby-wasm/src/types.d.ts
-	rm -rf crates/obby-client/bindings
+	rm -rf crates/obby-client/bindings bindings/obby.ts
 
 wasm: ## browser and bun package
 	wasm-pack build bindings/obby-wasm --target web --out-dir pkg
