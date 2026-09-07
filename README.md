@@ -21,13 +21,13 @@ and a socket.
 
 ## What you get
 
-- **One core, five languages.** The protocol is written once, in Rust. The five bindings cannot
-  drift: a test fails when one of them is missing a command the others have.
-- **Types, not strings.** Every command and event is typed in every language. The TypeScript
-  definitions are generated from the Rust and contain no `any`, and a consumer is type-checked and
-  then run against the built module on every push.
-- **It remembers.** The engine holds the model, so an app renders it and keeps no second copy:
-  scrollback with a retention cap, deduplicated replays, merged history pages, unread counts.
+- **One core, five languages.** The protocol is written once, in Rust, so a fix reaches your
+  desktop, web and mobile clients at the same time.
+- **The state, not just a parser.** Channels, members, conversations and scrollback are kept for
+  you, with the parts everyone gets wrong: casemapping, deduplicated replays, merged history pages,
+  a reconnect that replays what you had.
+- **It runs where you run.** No sockets, no timers, no threads, no async runtime. A browser tab, a
+  terminal, a Flutter app, an embedded target: same engine, your transport.
 
 ## Installation
 
@@ -187,14 +187,12 @@ client.join("#obby");
 Events drain as a batch, because one call across the WebAssembly boundary costs the same for one
 event as for a hundred.
 
-The package is strictly typed, and nothing in it is `any`. `Command`, `Event`, `Model`, `Config` and
-every shape they reach are generated from the Rust types, so TypeScript rejects a misspelled field
-before the code runs, and a change to the engine shows up as a type error:
+The type definitions are generated from the Rust, so a change to the engine reaches you as a type
+error and never as a surprise at runtime:
 
 ```ts
 for (const event of client.pollEvents()) {
   if (event.type === "registered") {
-    // TypeScript knows this branch has `nick`, and that a join needs `channel` and `key`
     console.log(`registered as ${event.nick}`);
     client.join("#obby");
   }

@@ -11,8 +11,8 @@ send. One build serves both the browser and Bun, and every shape it hands you is
 npm install obby-client
 ```
 
-Every shape is typed: `Command`, `Event`, `Model` and the rest are generated from the Rust and
-shipped in the package, so a mistyped field is a compile error.
+The type definitions ship with the package and are generated from the Rust, so a change to the
+engine reaches you as a type error.
 
 ```ts
 import init, { ObbyClient, type Command, type ObbyEvent } from "obby-client";

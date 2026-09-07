@@ -174,18 +174,18 @@ cat >"$out/index.html" <<HTML
     <div class="grid">
       <div class="card">
         <span class="name">One core, five languages</span>
-        <span class="what">The protocol is written once, in Rust. A new client is the UI plus a
-          socket, and the five bindings cannot drift: a test fails when one of them lags.</span>
+        <span class="what">The protocol is written once, in Rust, so a fix reaches your desktop, web
+          and mobile clients at the same time.</span>
       </div>
       <div class="card">
-        <span class="name">Types, not strings</span>
-        <span class="what">Commands and events are typed in every language. The TypeScript
-          definitions are generated from the Rust and contain no <code>any</code>.</span>
+        <span class="name">The state, not just a parser</span>
+        <span class="what">Channels, members, conversations and scrollback are kept for you, with
+          the parts everyone gets wrong: casemapping, deduplicated replays, merged history.</span>
       </div>
       <div class="card">
-        <span class="name">It remembers</span>
-        <span class="what">Channels, members, conversations and their messages, with dedup, history
-          merging and a reconnect that replays what you had.</span>
+        <span class="name">It runs where you run</span>
+        <span class="what">No sockets, no timers, no threads, no async runtime. A browser tab, a
+          terminal, a Flutter app: same engine, your transport.</span>
       </div>
     </div>
   </section>
@@ -199,7 +199,7 @@ cat >"$out/index.html" <<HTML
       </a>
       <a class="card" href="typescript/">
         <span class="name">TypeScript</span>
-        <span class="what">Browser and Bun, fully typed. <code>npm i obby-client</code></span>
+        <span class="what">Browser and Bun, one build. <code>npm i obby-client</code></span>
       </a>
       <a class="card" href="python/obby_client.html">
         <span class="name">Python</span>
