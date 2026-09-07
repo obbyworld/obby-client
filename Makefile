@@ -3,7 +3,7 @@
 # a Rust staticlib carries no dependencies of its own, so the platform's libraries come last
 FFI_SYSTEM_LIBS := $(if $(filter Darwin,$(shell uname -s)),-framework CoreFoundation -framework Security,-lpthread -ldl -lm)
 .PHONY: help install fix precommit check test live snap snap-accept doc lint fmt-check features wasm-check header msrv deny dupes machete \
-        wasm python dart c-smoke ts-types ts-check ci release-patch release-minor release-major
+        wasm python dart c-smoke ts-types ts-check site ci release-patch release-minor release-major
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -98,6 +98,9 @@ c-smoke: ## compile and run the C program that drives the whole ABI
 ts-check: ## typecheck a consumer against the generated definitions
 	npx --yes -p typescript@5 tsc --strict --noEmit --target es2022 --lib esnext,dom \
 	  --module es2022 --moduleResolution bundler bindings/obby-wasm/tests/typecheck.ts
+
+site: ## build the documentation site into target/site
+	scripts/build-docs.sh
 
 python: ## cpython wheel
 	maturin build --release --manifest-path bindings/obby-python/Cargo.toml

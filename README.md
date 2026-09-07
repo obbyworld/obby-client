@@ -288,6 +288,12 @@ and run by `make c-smoke`.
 
 </details>
 
+## Documentation
+
+<https://obbyworld.github.io/obby-client> carries the reference for every language, rebuilt from the
+code on each push: Rust, TypeScript, Python, Dart, and the C header. `llms.txt` on that site is the
+same material as one file, for an agent that would rather read than crawl.
+
 ## Development
 
 ```sh
@@ -295,6 +301,7 @@ make check   # after every change
 make test
 make ci      # everything CI runs, before a commit
 make live    # smoke test against a real server, needs the network
+make site    # build the documentation site into target/site
 ```
 
 `make help` lists the rest. [CONTRIBUTING.md](CONTRIBUTING.md) covers releasing and publishing.
