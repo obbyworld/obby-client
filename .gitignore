@@ -14,5 +14,10 @@ node_modules
 __pycache__
 .venv
 
+# tool output that has no business here
+/.playwright-mcp
+/*.png
+/*.jpg
+
 # snapshot review leftovers
 *.snap.new
