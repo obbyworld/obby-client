@@ -586,7 +586,10 @@ fn event_out(event: &Event) -> ObbyEvent {
             ..
         } => {
             out.kind = ObbyEventKind::Reply;
-            out.text(ObbyEventField::Severity, &format!("{severity:?}").to_lowercase());
+            out.text(
+                ObbyEventField::Severity,
+                &format!("{severity:?}").to_lowercase(),
+            );
             out.text(ObbyEventField::Command, command);
             out.text(ObbyEventField::Code, code);
             out.text(ObbyEventField::Text, text);
@@ -808,10 +811,7 @@ pub unsafe extern "C" fn obby_client_set_away(
 /// # Safety
 /// As [`obby_client_join`].
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn obby_client_quit(
-    client: *mut ObbyClient,
-    reason: *const c_char,
-) -> bool {
+pub unsafe extern "C" fn obby_client_quit(client: *mut ObbyClient, reason: *const c_char) -> bool {
     unsafe {
         submit(client, || {
             Some(Command::Quit {
@@ -1112,12 +1112,19 @@ mod tests {
 
         let welcome = c":s 001 typed :Welcome\r\n";
         unsafe {
-            obby_client_handle_bytes(client, welcome.to_bytes().as_ptr(), welcome.to_bytes().len());
+            obby_client_handle_bytes(
+                client,
+                welcome.to_bytes().as_ptr(),
+                welcome.to_bytes().len(),
+            );
         }
 
         let event = unsafe { obby_client_poll_event(client) };
         assert!(!event.is_null());
-        assert_eq!(unsafe { obby_event_get_kind(event) }, ObbyEventKind::Registered);
+        assert_eq!(
+            unsafe { obby_event_get_kind(event) },
+            ObbyEventKind::Registered
+        );
         let nick_field = unsafe { obby_event_text(event, ObbyEventField::Nick) };
         assert_eq!(unsafe { CStr::from_ptr(nick_field) }, c"typed");
         assert!(unsafe { obby_event_text(event, ObbyEventField::Account) }.is_null());
@@ -1125,9 +1132,7 @@ mod tests {
         unsafe { obby_event_free(event) };
 
         assert!(unsafe { obby_client_join(client, c"#obby".as_ptr(), ptr::null()) });
-        assert!(unsafe {
-            obby_client_send_message(client, c"#obby".as_ptr(), c"hello".as_ptr())
-        });
+        assert!(unsafe { obby_client_send_message(client, c"#obby".as_ptr(), c"hello".as_ptr()) });
         assert!(unsafe { obby_client_quit(client, c"bye".as_ptr()) });
         let sent = drain(client);
         assert!(sent.contains("JOIN #obby"));

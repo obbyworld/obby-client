@@ -6,8 +6,8 @@
 //! separately from events, matching `poll_transmit` versus `poll_event` in the wrapped API.
 
 use obby_client::{Client, Command, Config, Event, Now};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::JsCast as _;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// The TypeScript definitions of everything that crosses this boundary.
