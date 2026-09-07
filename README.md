@@ -120,7 +120,7 @@ use obby_client::{Client, Command, Config, Event, Now};
 let mut socket = TcpStream::connect(("irc.libera.chat", 6667))?;
 
 let mut client = Client::new(Config::new("mynick"));
-client.handleConnected();
+client.handle_connected();
 
 let mut buf = [0u8; 8192];
 loop {
@@ -208,7 +208,7 @@ from obby_client import Client
 sock = socketlib.create_connection(("irc.example.org", 6667))
 
 client = Client({"nick": "mynick"})
-client.handleConnected()
+client.handle_connected()
 
 while (out := client.poll_transmit()) is not None:
     sock.sendall(out)
