@@ -38,7 +38,7 @@ mod convert;
 /// sock = socket.create_connection(("irc.example.org", 6667))
 /// started = time.monotonic()
 /// client = Client({"nick": "mynick"})
-/// client.connected()
+/// client.handle_connected()
 ///
 /// while True:
 ///     while (out := client.poll_transmit()) is not None:
@@ -75,13 +75,13 @@ impl Client {
     }
 
     /// Tell the engine the transport is up. Queues the registration burst.
-    fn connected(&mut self, py: Python<'_>) {
+    fn handle_connected(&mut self, py: Python<'_>) {
         let inner = &mut self.inner;
         py.detach(move || inner.handle_connected());
     }
 
     /// Tell the engine its transport died. The model survives, so a reconnect can resume from it.
-    fn disconnected(&mut self, py: Python<'_>) {
+    fn handle_disconnected(&mut self, py: Python<'_>) {
         let inner = &mut self.inner;
         py.detach(move || inner.handle_disconnected());
     }

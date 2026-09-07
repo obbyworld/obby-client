@@ -219,7 +219,7 @@ from obby_client import Client
 sock = socketlib.create_connection(("irc.example.org", 6667))
 
 client = Client({"nick": "mynick"})
-client.connected()
+client.handle_connected()
 
 while (out := client.poll_transmit()) is not None:
     sock.sendall(out)

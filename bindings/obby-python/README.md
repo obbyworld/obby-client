@@ -15,7 +15,7 @@ pip install obby-client
 from obby_client import Client
 
 client = Client({"nick": "mynick"})
-client.connected()
+client.handle_connected()
 
 while (out := client.poll_transmit()) is not None:
     sock.sendall(out)
