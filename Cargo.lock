@@ -398,7 +398,7 @@ dependencies = [
 
 [[package]]
 name = "obby-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "chacha20poly1305",
@@ -418,7 +418,7 @@ dependencies = [
 
 [[package]]
 name = "obby-ffi"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "obby-client",
  "serde_json",
@@ -426,7 +426,7 @@ dependencies = [
 
 [[package]]
 name = "obby-proto"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proptest",
  "serde",
@@ -435,7 +435,7 @@ dependencies = [
 
 [[package]]
 name = "obby-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "obby-client",
  "pyo3",
@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "obby-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "obby-client",
  "serde-wasm-bindgen",
