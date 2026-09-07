@@ -1,6 +1,9 @@
 .DEFAULT_GOAL := help
+
+# a Rust staticlib carries no dependencies of its own, so the platform's libraries come last
+FFI_SYSTEM_LIBS := $(if $(filter Darwin,$(shell uname -s)),-framework CoreFoundation -framework Security,-lpthread -ldl -lm)
 .PHONY: help install fix precommit check test live snap snap-accept doc lint fmt-check features wasm-check header msrv deny dupes machete \
-        wasm python dart ci release-patch release-minor release-major
+        wasm python dart c-smoke ci release-patch release-minor release-major
 
 help: ## list available targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-14s %s\n", $$1, $$2}'
@@ -76,6 +79,13 @@ wasm: ## browser and bun package
 	wasm-pack build bindings/obby-wasm --target web --out-dir pkg
 	# wasm-pack names the package after the crate, and npm shows the name a consumer types
 	cd bindings/obby-wasm/pkg && npm pkg set name=obby-client
+
+c-smoke: ## compile and run the C program that drives the whole ABI
+	cargo build -p obby-ffi --release
+	cc -std=c11 -Wall -Wextra -Werror -D_GNU_SOURCE -Ibindings/obby-ffi/include \
+	  bindings/obby-ffi/tests/smoke.c target/release/libobby_ffi.a \
+	  $(FFI_SYSTEM_LIBS) -o target/obby-c-smoke
+	./target/obby-c-smoke
 
 python: ## cpython wheel
 	maturin build --release --manifest-path bindings/obby-python/Cargo.toml

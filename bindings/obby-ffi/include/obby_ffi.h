@@ -17,12 +17,178 @@
 #include <stdlib.h>
 
 /**
+ * What an [`ObbyEvent`] is.
+ *
+ * `Unknown` covers an event this ABI has no case for yet, which a caller reads with
+ * [`obby_event_json`] rather than being blind to it.
+ */
+typedef enum obby_event_kind {
+    /**
+     * An event this ABI does not name. Read it with [`obby_event_json`].
+     */
+    OBBY_EVENT_KIND_UNKNOWN = 0,
+    /**
+     * The server acknowledged the capabilities we asked for.
+     */
+    OBBY_EVENT_KIND_CAP_ACKNOWLEDGED,
+    /**
+     * Registration finished and the connection is usable.
+     */
+    OBBY_EVENT_KIND_REGISTERED,
+    /**
+     * One `005` token, with its value when it has one.
+     */
+    OBBY_EVENT_KIND_ISUPPORT,
+    /**
+     * SASL authentication succeeded.
+     */
+    OBBY_EVENT_KIND_LOGGED_IN,
+    /**
+     * SASL authentication failed.
+     */
+    OBBY_EVENT_KIND_SASL_FAILED,
+    /**
+     * The nick we asked for is taken.
+     */
+    OBBY_EVENT_KIND_NICK_IN_USE,
+    /**
+     * The model changed. The change itself is in [`obby_event_json`].
+     */
+    OBBY_EVENT_KIND_CHANGED,
+    /**
+     * The link is dead and the host should redial.
+     */
+    OBBY_EVENT_KIND_LINK_DEAD,
+    /**
+     * Redial after this many milliseconds.
+     */
+    OBBY_EVENT_KIND_RECONNECT,
+    /**
+     * Reconnection gave up.
+     */
+    OBBY_EVENT_KIND_RECONNECT_GAVE_UP,
+    /**
+     * A command we labelled went unanswered.
+     */
+    OBBY_EVENT_KIND_COMMAND_TIMED_OUT,
+    /**
+     * The commands the server lets us use changed.
+     */
+    OBBY_EVENT_KIND_COMMANDS_CHANGED,
+    /**
+     * A voice signalling frame. The frame is in [`obby_event_json`].
+     */
+    OBBY_EVENT_KIND_VOICE,
+    /**
+     * Someone started or stopped composing a message.
+     */
+    OBBY_EVENT_KIND_TYPING,
+    /**
+     * Someone we monitor came online or went offline.
+     */
+    OBBY_EVENT_KIND_PRESENCE,
+    /**
+     * A `standard-replies` FAIL, WARN or NOTE.
+     */
+    OBBY_EVENT_KIND_REPLY,
+    /**
+     * A line the engine does not model. The message is in [`obby_event_json`].
+     */
+    OBBY_EVENT_KIND_RAW,
+} obby_event_kind;
+
+/**
+ * One value on an [`ObbyEvent`].
+ *
+ * An event only has the fields its kind defines, and [`obby_event_text`] answers null for the
+ * rest. Numbers, including the booleans, are read with [`obby_event_number`].
+ */
+typedef enum obby_event_field {
+    /**
+     * The nick an event is about.
+     */
+    OBBY_EVENT_FIELD_NICK = 0,
+    /**
+     * The account we authenticated as.
+     */
+    OBBY_EVENT_FIELD_ACCOUNT,
+    /**
+     * A `005` token name.
+     */
+    OBBY_EVENT_FIELD_TOKEN,
+    /**
+     * A `005` token's value.
+     */
+    OBBY_EVENT_FIELD_VALUE,
+    /**
+     * The nick the server refused.
+     */
+    OBBY_EVENT_FIELD_REFUSED,
+    /**
+     * The nick being tried instead.
+     */
+    OBBY_EVENT_FIELD_TRYING,
+    /**
+     * Why something failed.
+     */
+    OBBY_EVENT_FIELD_REASON,
+    /**
+     * The command an event is about.
+     */
+    OBBY_EVENT_FIELD_COMMAND,
+    /**
+     * The channel or nick an event is about.
+     */
+    OBBY_EVENT_FIELD_TARGET,
+    /**
+     * The channel an event is about.
+     */
+    OBBY_EVENT_FIELD_CHANNEL,
+    /**
+     * A numeric or named reply code.
+     */
+    OBBY_EVENT_FIELD_CODE,
+    /**
+     * Human-readable text from the server.
+     */
+    OBBY_EVENT_FIELD_TEXT,
+    /**
+     * `fail`, `warn` or `note`.
+     */
+    OBBY_EVENT_FIELD_SEVERITY,
+    /**
+     * The capability names the server acknowledged, separated by spaces.
+     */
+    OBBY_EVENT_FIELD_NAMES,
+    /**
+     * How long to wait before redialling, in milliseconds. Read with [`obby_event_number`].
+     */
+    OBBY_EVENT_FIELD_AFTER_MS,
+    /**
+     * 1 when someone is composing, 0 when they stopped. Read with [`obby_event_number`].
+     */
+    OBBY_EVENT_FIELD_TYPING,
+    /**
+     * 1 when someone is online, 0 when they are not. Read with [`obby_event_number`].
+     */
+    OBBY_EVENT_FIELD_ONLINE,
+} obby_event_field;
+
+/**
  * One connection's engine state.
  *
  * Created by [`obby_client_new`] and destroyed by [`obby_client_free`]. The caller only ever holds
  * a pointer to one; every operation on it goes through a function in this crate.
  */
 typedef struct obby_client_t obby_client_t;
+
+/**
+ * One event, owned by the caller until [`obby_event_free`].
+ *
+ * The strings [`obby_event_text`] and [`obby_event_json`] return point into this event and die
+ * with it, so copy anything that must outlive the call to free.
+ */
+typedef struct obby_event_t obby_event_t;
 
 /**
  * An owned byte buffer handed out by [`obby_client_poll_transmit`].
@@ -42,7 +208,41 @@ typedef struct obby_bytes_t {
 } obby_bytes_t;
 
 /**
- * Create a client from a JSON-encoded [`Config`].
+ * A client's settings, in C types.
+ *
+ * Only `nick` is required. Every pointer may be null, and a null means "use the default": the
+ * nick for `username` and `realname`, no password, no SASL. A zero `retention` keeps the engine's
+ * own message limit.
+ *
+ * [`obby_client_new_from_json`] takes the fields this omits, such as SASL credentials and the
+ * alternate nicks to try when one is taken.
+ */
+typedef struct obby_config_t {
+    /**
+     * The nick to register with. Required.
+     */
+    const char *nick;
+    /**
+     * The username sent in `USER`, or null for the nick.
+     */
+    const char *username;
+    /**
+     * The realname sent in `USER`, or null for the nick.
+     */
+    const char *realname;
+    /**
+     * The server password sent as `PASS`, or null for none.
+     */
+    const char *password;
+    /**
+     * How many messages each channel and conversation keeps, or 0 for the default.
+     */
+    size_t retention;
+} obby_config_t;
+
+/**
+ * Create a client from a JSON-encoded [`Config`], for a caller that wants a field
+ * [`ObbyConfig`] does not have, such as SASL credentials or alternate nicks.
  *
  * Returns null when `config_json` is null, is not valid UTF-8, or does not parse as a `Config`.
  *
@@ -50,7 +250,7 @@ typedef struct obby_bytes_t {
  * `config_json` must be null or point to a NUL-terminated, valid UTF-8 C string, valid for reads
  * for the duration of this call.
  */
-struct obby_client_t *obby_client_new(const char *config_json);
+struct obby_client_t *obby_client_new_from_json(const char *config_json);
 
 /**
  * Destroy a client created by [`obby_client_new`].
@@ -67,7 +267,7 @@ void obby_client_free(struct obby_client_t *client);
  * Tell the engine the transport is up. See [`obby_client::Client::connected`].
  *
  * # Safety
- * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+ * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
  *
  * The handle must not be in use on another thread while this call runs.
  */
@@ -77,7 +277,7 @@ void obby_client_connected(struct obby_client_t *client);
  * Tell the engine its transport died. See [`obby_client::Client::disconnected`].
  *
  * # Safety
- * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+ * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
  *
  * The handle must not be in use on another thread while this call runs.
  */
@@ -101,7 +301,7 @@ void obby_client_handle_bytes(struct obby_client_t *client, const uint8_t *data,
  * Drain one pending outbound buffer, or the empty [`ObbyBytes`] when there is none.
  *
  * # Safety
- * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+ * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
  *
  * The handle must not be in use on another thread while this call runs.
  */
@@ -124,20 +324,20 @@ void obby_client_free_bytes(struct obby_bytes_t bytes);
  * Returns null only when `client` is null; a working client always produces valid JSON.
  *
  * # Safety
- * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+ * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
  *
  * The handle must not be in use on another thread while this call runs.
  */
-char *obby_client_poll_events(struct obby_client_t *client);
+char *obby_client_poll_events_json(struct obby_client_t *client);
 
 /**
- * Free a string returned by [`obby_client_poll_events`] or [`obby_client_model_json`].
+ * Free a string returned by [`obby_client_poll_events_json`] or [`obby_client_model_json`].
  *
  * The only legal way to release one. Never pass the pointer returned by [`obby_client_version`]
  * here: that one is static and owned by the library, not by the caller.
  *
  * # Safety
- * `s` must be null, or a pointer returned by [`obby_client_poll_events`] or
+ * `s` must be null, or a pointer returned by [`obby_client_poll_events_json`] or
  * [`obby_client_model_json`] that has not already been freed.///
  */
 void obby_client_free_string(char *s);
@@ -146,7 +346,7 @@ void obby_client_free_string(char *s);
  * Advance the clock. See [`obby_client::Client::tick`].
  *
  * # Safety
- * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+ * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
  *
  * The handle must not be in use on another thread while this call runs.
  */
@@ -168,7 +368,10 @@ void obby_client_tick(struct obby_client_t *client, uint64_t monotonic_ms, uint6
 bool obby_client_poll_timeout(struct obby_client_t *client, uint64_t *out_ms);
 
 /**
- * Submit a command from a JSON-encoded [`Command`].
+ * Submit any command, as JSON.
+ *
+ * Every command has this form; the ones a client sends constantly also have a function of their
+ * own, such as [`obby_client_join`].
  *
  * Returns `true` when it parsed and was submitted, `false` when `client` or `command_json` is
  * null, `command_json` is not valid UTF-8, or it does not parse as a `Command`.
@@ -179,7 +382,7 @@ bool obby_client_poll_timeout(struct obby_client_t *client, uint64_t *out_ms);
  *
  * The handle must not be in use on another thread while this call runs.
  */
-bool obby_client_command(struct obby_client_t *client, const char *command_json);
+bool obby_client_command_from_json(struct obby_client_t *client, const char *command_json);
 
 /**
  * Read the whole model as JSON, for a host that wants the full state rather than the changes.
@@ -187,7 +390,7 @@ bool obby_client_command(struct obby_client_t *client, const char *command_json)
  * Returns null only when `client` is null; a working client always produces valid JSON.
  *
  * # Safety
- * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+ * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
  *
  * The handle must not be in use on another thread while this call runs.
  */
@@ -200,5 +403,164 @@ char *obby_client_model_json(struct obby_client_t *client);
  * [`obby_client_free_string`].
  */
 const char *obby_client_version(void);
+
+/**
+ * Create a client.
+ *
+ * Returns null when `config` is null, or when its `nick` is null or not valid UTF-8.
+ *
+ * # Safety
+ * `config` must be null or point to a readable [`ObbyConfig`] whose string fields are each null or
+ * a NUL-terminated, valid UTF-8 C string, all valid for reads for the duration of this call.
+ */
+struct obby_client_t *obby_client_new(const struct obby_config_t *config);
+
+/**
+ * Join a channel, with `key` for a channel that needs one, or null.
+ *
+ * # Safety
+ * `client` must be null or valid. Each string must be null or a NUL-terminated, valid UTF-8 C
+ * string, valid for reads for the duration of this call.
+ *
+ * The handle must not be in use on another thread while this call runs.
+ */
+bool obby_client_join(struct obby_client_t *client, const char *channel, const char *key);
+
+/**
+ * Leave a channel, with `reason` shown to the others in it, or null.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_part(struct obby_client_t *client, const char *channel, const char *reason);
+
+/**
+ * Say something to a channel or a person.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_send_message(struct obby_client_t *client, const char *target, const char *text);
+
+/**
+ * Send a notice, which by convention must never be auto-replied to.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_send_notice(struct obby_client_t *client, const char *target, const char *text);
+
+/**
+ * Send a `CTCP ACTION`, the third-person form.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_send_action(struct obby_client_t *client, const char *target, const char *text);
+
+/**
+ * Change our nick.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_set_nick(struct obby_client_t *client, const char *nick);
+
+/**
+ * Set or clear a channel's topic. A null `topic` asks for the current one.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_set_topic(struct obby_client_t *client, const char *channel, const char *topic);
+
+/**
+ * Go away with a message, or come back by passing null.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_set_away(struct obby_client_t *client, const char *message);
+
+/**
+ * Quit, with a reason or null.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_quit(struct obby_client_t *client, const char *reason);
+
+/**
+ * Send one raw protocol line, without the trailing CRLF, for anything this ABI does not name.
+ *
+ * # Safety
+ * As [`obby_client_join`].
+ */
+bool obby_client_send_raw(struct obby_client_t *client, const char *line);
+
+/**
+ * Take the next event, or null when there are none.
+ *
+ * The caller owns what comes back and releases it with [`obby_event_free`].
+ *
+ * # Safety
+ * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
+ *
+ * The handle must not be in use on another thread while this call runs.
+ */
+struct obby_event_t *obby_client_poll_event(struct obby_client_t *client);
+
+/**
+ * What kind of event this is.
+ *
+ * A null event reads as [`ObbyEventKind::Unknown`], so a caller that skipped the null check gets a
+ * kind it already has to handle rather than a crash.
+ *
+ * # Safety
+ * `event` must be null or a valid, non-freed pointer from [`obby_client_poll_event`].
+ */
+enum obby_event_kind obby_event_get_kind(const struct obby_event_t *event);
+
+/**
+ * One of the event's string fields, or null when this event has no such field.
+ *
+ * The pointer borrows from the event and is invalid once [`obby_event_free`] runs.
+ *
+ * # Safety
+ * `event` must be null or a valid, non-freed pointer from [`obby_client_poll_event`].
+ */
+const char *obby_event_text(const struct obby_event_t *event, enum obby_event_field field);
+
+/**
+ * One of the event's numeric fields, written to `out`.
+ *
+ * Returns false, and leaves `out` alone, when this event has no such field.
+ *
+ * # Safety
+ * `event` must be null or a valid, non-freed pointer from [`obby_client_poll_event`]. `out` must
+ * be null or point to a writable `uint64_t`.
+ */
+bool obby_event_number(const struct obby_event_t *event,
+                       enum obby_event_field field,
+                       uint64_t *out);
+
+/**
+ * The whole event as JSON, for the parts this ABI does not flatten into fields.
+ *
+ * The pointer borrows from the event and is invalid once [`obby_event_free`] runs.
+ *
+ * # Safety
+ * `event` must be null or a valid, non-freed pointer from [`obby_client_poll_event`].
+ */
+const char *obby_event_json(const struct obby_event_t *event);
+
+/**
+ * Release an event.
+ *
+ * # Safety
+ * `event` must be null, or a pointer from [`obby_client_poll_event`] that has not already been
+ * passed here. Every string read from it is invalid afterwards.
+ */
+void obby_event_free(struct obby_event_t *event);
 
 #endif  /* OBBY_FFI_H */

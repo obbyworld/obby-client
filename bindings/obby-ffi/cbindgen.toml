@@ -19,6 +19,14 @@ parse_deps = false
 [export.rename]
 ObbyClient = "obby_client_t"
 ObbyBytes = "obby_bytes_t"
+ObbyConfig = "obby_config_t"
+ObbyEvent = "obby_event_t"
+ObbyEventKind = "obby_event_kind"
+ObbyEventField = "obby_event_field"
+
+[enum]
+prefix_with_name = true
+rename_variants = "ScreamingSnakeCase"
 
 [fn]
 sort_by = "None"

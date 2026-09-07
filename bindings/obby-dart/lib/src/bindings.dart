@@ -48,7 +48,7 @@ typedef _VersionNative = Pointer<Utf8> Function();
 class Bindings {
   Bindings(DynamicLibrary library)
     : newClient = library.lookupFunction<_NewNative, _NewNative>(
-        'obby_client_new',
+        'obby_client_new_from_json',
       ),
       freeClient = library.lookupFunction<_FreeNative, _Free>(
         'obby_client_free',
@@ -71,7 +71,7 @@ class Bindings {
       ),
       pollEvents = library
           .lookupFunction<_StringOnClientNative, _StringOnClientNative>(
-            'obby_client_poll_events',
+            'obby_client_poll_events_json',
           ),
       modelJson = library
           .lookupFunction<_StringOnClientNative, _StringOnClientNative>(
@@ -85,7 +85,7 @@ class Bindings {
         'obby_client_poll_timeout',
       ),
       command = library.lookupFunction<_CommandNative, _Command>(
-        'obby_client_command',
+        'obby_client_command_from_json',
       ),
       version = library.lookupFunction<_VersionNative, _VersionNative>(
         'obby_client_version',

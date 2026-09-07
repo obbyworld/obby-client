@@ -15,13 +15,18 @@
 //! [`obby_client_free`]. Everything else mirrors the four inputs and three outputs of
 //! [`obby_client::Client`]: bytes and time go in, bytes and events come out.
 //!
-//! [`Command`] is small and rarely constructed, compared to how often [`obby_client::Event`] grows,
-//! so the two directions cross the boundary differently:
-//! [`obby_client_command`] takes one JSON object per call, while [`obby_client_poll_events`] drains
-//! every pending event as one JSON array per call, a single crossing rather than one per event.
-//! Bytes never enter that JSON channel: [`obby_client_handle_bytes`] and
-//! [`obby_client_poll_transmit`] carry them as a pointer and a length, exactly as `handle_bytes` and
-//! `poll_transmit` are already separate from `poll_event` in the Rust API.
+//! A C caller works in C types. [`obby_client_new`] takes an [`ObbyConfig`] struct, the commands a
+//! client sends every day are one function each ([`obby_client_join`], [`obby_client_send_message`]
+//! and the rest), and an event arrives as an [`ObbyEvent`] whose kind and fields are read with
+//! [`obby_event_get_kind`] and [`obby_event_text`]. Nothing on that path asks a C program to build or
+//! parse JSON.
+//!
+//! JSON remains the escape hatch for the long tail, since the alternative is one exported function
+//! per command variant and one struct per event shape, both of which change whenever the protocol
+//! does. [`obby_client_command_from_json`] submits any [`Command`],
+//! [`obby_client_new_from_json`] takes a whole [`Config`] including SASL credentials,
+//! [`obby_event_json`] gives an event's full body, and [`obby_client_poll_events_json`] drains every
+//! pending event at once, which is what a binding for a language with a JSON parser wants.
 //!
 //! This crate is the one place `unsafe` lives in the workspace. Every function that takes a raw
 //! pointer documents exactly what the caller must guarantee, and none of them panics: a null
@@ -32,7 +37,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::ptr;
 use std::sync::OnceLock;
 
-use obby_client::{Client, Command, Config, Now};
+use obby_client::{Client, Command, Config, Event, Now};
 
 /// One connection's engine state.
 ///
@@ -64,8 +69,8 @@ impl ObbyBytes {
 /// Turn a raw client pointer into a reference, treating null as absent rather than a fault.
 ///
 /// # Safety
-/// `client` must be null or a pointer returned by [`obby_client_new`] that has not since been
-/// passed to [`obby_client_free`].
+/// `client` must be null or a pointer returned by [`obby_client_new`] or [`obby_client_new_from_json`] that has not
+/// since been passed to [`obby_client_free`].
 /// Borrow the engine behind a handle.
 ///
 /// The returned reference is exclusive and its lifetime is unconstrained, so the caller must have
@@ -114,7 +119,8 @@ fn string_out(s: String) -> *mut c_char {
     CString::new(s).map_or_else(|_| ptr::null_mut(), CString::into_raw)
 }
 
-/// Create a client from a JSON-encoded [`Config`].
+/// Create a client from a JSON-encoded [`Config`], for a caller that wants a field
+/// [`ObbyConfig`] does not have, such as SASL credentials or alternate nicks.
 ///
 /// Returns null when `config_json` is null, is not valid UTF-8, or does not parse as a `Config`.
 ///
@@ -122,7 +128,7 @@ fn string_out(s: String) -> *mut c_char {
 /// `config_json` must be null or point to a NUL-terminated, valid UTF-8 C string, valid for reads
 /// for the duration of this call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn obby_client_new(config_json: *const c_char) -> *mut ObbyClient {
+pub unsafe extern "C" fn obby_client_new_from_json(config_json: *const c_char) -> *mut ObbyClient {
     let Some(json) = (unsafe { str_from_ptr(config_json) }) else {
         return ptr::null_mut();
     };
@@ -150,7 +156,7 @@ pub unsafe extern "C" fn obby_client_free(client: *mut ObbyClient) {
 /// Tell the engine the transport is up. See [`obby_client::Client::connected`].
 ///
 /// # Safety
-/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
 ///
 /// The handle must not be in use on another thread while this call runs.
 #[unsafe(no_mangle)]
@@ -163,7 +169,7 @@ pub unsafe extern "C" fn obby_client_connected(client: *mut ObbyClient) {
 /// Tell the engine its transport died. See [`obby_client::Client::disconnected`].
 ///
 /// # Safety
-/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
 ///
 /// The handle must not be in use on another thread while this call runs.
 #[unsafe(no_mangle)]
@@ -205,7 +211,7 @@ pub unsafe extern "C" fn obby_client_handle_bytes(
 /// Drain one pending outbound buffer, or the empty [`ObbyBytes`] when there is none.
 ///
 /// # Safety
-/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
 ///
 /// The handle must not be in use on another thread while this call runs.
 #[unsafe(no_mangle)]
@@ -235,11 +241,11 @@ pub unsafe extern "C" fn obby_client_free_bytes(bytes: ObbyBytes) {
 /// Returns null only when `client` is null; a working client always produces valid JSON.
 ///
 /// # Safety
-/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
 ///
 /// The handle must not be in use on another thread while this call runs.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn obby_client_poll_events(client: *mut ObbyClient) -> *mut c_char {
+pub unsafe extern "C" fn obby_client_poll_events_json(client: *mut ObbyClient) -> *mut c_char {
     let Some(client) = (unsafe { as_client(client) }) else {
         return ptr::null_mut();
     };
@@ -250,13 +256,13 @@ pub unsafe extern "C" fn obby_client_poll_events(client: *mut ObbyClient) -> *mu
     serde_json::to_string(&events).map_or_else(|_| ptr::null_mut(), string_out)
 }
 
-/// Free a string returned by [`obby_client_poll_events`] or [`obby_client_model_json`].
+/// Free a string returned by [`obby_client_poll_events_json`] or [`obby_client_model_json`].
 ///
 /// The only legal way to release one. Never pass the pointer returned by [`obby_client_version`]
 /// here: that one is static and owned by the library, not by the caller.
 ///
 /// # Safety
-/// `s` must be null, or a pointer returned by [`obby_client_poll_events`] or
+/// `s` must be null, or a pointer returned by [`obby_client_poll_events_json`] or
 /// [`obby_client_model_json`] that has not already been freed.///
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn obby_client_free_string(s: *mut c_char) {
@@ -269,7 +275,7 @@ pub unsafe extern "C" fn obby_client_free_string(s: *mut c_char) {
 /// Advance the clock. See [`obby_client::Client::tick`].
 ///
 /// # Safety
-/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
 ///
 /// The handle must not be in use on another thread while this call runs.
 #[unsafe(no_mangle)]
@@ -309,7 +315,10 @@ pub unsafe extern "C" fn obby_client_poll_timeout(
     timeout.is_some()
 }
 
-/// Submit a command from a JSON-encoded [`Command`].
+/// Submit any command, as JSON.
+///
+/// Every command has this form; the ones a client sends constantly also have a function of their
+/// own, such as [`obby_client_join`].
 ///
 /// Returns `true` when it parsed and was submitted, `false` when `client` or `command_json` is
 /// null, `command_json` is not valid UTF-8, or it does not parse as a `Command`.
@@ -320,7 +329,7 @@ pub unsafe extern "C" fn obby_client_poll_timeout(
 ///
 /// The handle must not be in use on another thread while this call runs.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn obby_client_command(
+pub unsafe extern "C" fn obby_client_command_from_json(
     client: *mut ObbyClient,
     command_json: *const c_char,
 ) -> bool {
@@ -342,7 +351,7 @@ pub unsafe extern "C" fn obby_client_command(
 /// Returns null only when `client` is null; a working client always produces valid JSON.
 ///
 /// # Safety
-/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].///
+/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
 ///
 /// The handle must not be in use on another thread while this call runs.
 #[unsafe(no_mangle)]
@@ -363,6 +372,572 @@ pub extern "C" fn obby_client_version() -> *const c_char {
     VERSION
         .get_or_init(|| CString::new(env!("CARGO_PKG_VERSION")).unwrap_or_default())
         .as_ptr()
+}
+
+/// A client's settings, in C types.
+///
+/// Only `nick` is required. Every pointer may be null, and a null means "use the default": the
+/// nick for `username` and `realname`, no password, no SASL. A zero `retention` keeps the engine's
+/// own message limit.
+///
+/// [`obby_client_new_from_json`] takes the fields this omits, such as SASL credentials and the
+/// alternate nicks to try when one is taken.
+#[repr(C)]
+pub struct ObbyConfig {
+    /// The nick to register with. Required.
+    pub nick: *const c_char,
+    /// The username sent in `USER`, or null for the nick.
+    pub username: *const c_char,
+    /// The realname sent in `USER`, or null for the nick.
+    pub realname: *const c_char,
+    /// The server password sent as `PASS`, or null for none.
+    pub password: *const c_char,
+    /// How many messages each channel and conversation keeps, or 0 for the default.
+    pub retention: usize,
+}
+
+/// What an [`ObbyEvent`] is.
+///
+/// `Unknown` covers an event this ABI has no case for yet, which a caller reads with
+/// [`obby_event_json`] rather than being blind to it.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObbyEventKind {
+    /// An event this ABI does not name. Read it with [`obby_event_json`].
+    Unknown = 0,
+    /// The server acknowledged the capabilities we asked for.
+    CapAcknowledged,
+    /// Registration finished and the connection is usable.
+    Registered,
+    /// One `005` token, with its value when it has one.
+    Isupport,
+    /// SASL authentication succeeded.
+    LoggedIn,
+    /// SASL authentication failed.
+    SaslFailed,
+    /// The nick we asked for is taken.
+    NickInUse,
+    /// The model changed. The change itself is in [`obby_event_json`].
+    Changed,
+    /// The link is dead and the host should redial.
+    LinkDead,
+    /// Redial after this many milliseconds.
+    Reconnect,
+    /// Reconnection gave up.
+    ReconnectGaveUp,
+    /// A command we labelled went unanswered.
+    CommandTimedOut,
+    /// The commands the server lets us use changed.
+    CommandsChanged,
+    /// A voice signalling frame. The frame is in [`obby_event_json`].
+    Voice,
+    /// Someone started or stopped composing a message.
+    Typing,
+    /// Someone we monitor came online or went offline.
+    Presence,
+    /// A `standard-replies` FAIL, WARN or NOTE.
+    Reply,
+    /// A line the engine does not model. The message is in [`obby_event_json`].
+    Raw,
+}
+
+/// One value on an [`ObbyEvent`].
+///
+/// An event only has the fields its kind defines, and [`obby_event_text`] answers null for the
+/// rest. Numbers, including the booleans, are read with [`obby_event_number`].
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObbyEventField {
+    /// The nick an event is about.
+    Nick = 0,
+    /// The account we authenticated as.
+    Account,
+    /// A `005` token name.
+    Token,
+    /// A `005` token's value.
+    Value,
+    /// The nick the server refused.
+    Refused,
+    /// The nick being tried instead.
+    Trying,
+    /// Why something failed.
+    Reason,
+    /// The command an event is about.
+    Command,
+    /// The channel or nick an event is about.
+    Target,
+    /// The channel an event is about.
+    Channel,
+    /// A numeric or named reply code.
+    Code,
+    /// Human-readable text from the server.
+    Text,
+    /// `fail`, `warn` or `note`.
+    Severity,
+    /// The capability names the server acknowledged, separated by spaces.
+    Names,
+    /// How long to wait before redialling, in milliseconds. Read with [`obby_event_number`].
+    AfterMs,
+    /// 1 when someone is composing, 0 when they stopped. Read with [`obby_event_number`].
+    Typing,
+    /// 1 when someone is online, 0 when they are not. Read with [`obby_event_number`].
+    Online,
+}
+
+/// One event, owned by the caller until [`obby_event_free`].
+///
+/// The strings [`obby_event_text`] and [`obby_event_json`] return point into this event and die
+/// with it, so copy anything that must outlive the call to free.
+pub struct ObbyEvent {
+    kind: ObbyEventKind,
+    text: Vec<(ObbyEventField, CString)>,
+    numbers: Vec<(ObbyEventField, u64)>,
+    json: CString,
+}
+
+impl ObbyEvent {
+    fn text(&mut self, field: ObbyEventField, value: &str) {
+        if let Ok(value) = CString::new(value) {
+            self.text.push((field, value));
+        }
+    }
+
+    fn number(&mut self, field: ObbyEventField, value: u64) {
+        self.numbers.push((field, value));
+    }
+}
+
+/// Flatten an event into the C view of it, keeping the whole thing as JSON alongside.
+fn event_out(event: &Event) -> ObbyEvent {
+    let json = serde_json::to_string(event).unwrap_or_default();
+    let mut out = ObbyEvent {
+        kind: ObbyEventKind::Unknown,
+        text: Vec::new(),
+        numbers: Vec::new(),
+        json: CString::new(json).unwrap_or_default(),
+    };
+    match event {
+        Event::CapAcknowledged { names } => {
+            out.kind = ObbyEventKind::CapAcknowledged;
+            out.text(ObbyEventField::Names, &names.join(" "));
+        }
+        Event::Registered { nick } => {
+            out.kind = ObbyEventKind::Registered;
+            out.text(ObbyEventField::Nick, nick);
+        }
+        Event::Isupport { token, value } => {
+            out.kind = ObbyEventKind::Isupport;
+            out.text(ObbyEventField::Token, token);
+            if let Some(value) = value {
+                out.text(ObbyEventField::Value, value);
+            }
+        }
+        Event::LoggedIn { account } => {
+            out.kind = ObbyEventKind::LoggedIn;
+            out.text(ObbyEventField::Account, account);
+        }
+        Event::SaslFailed { reason } => {
+            out.kind = ObbyEventKind::SaslFailed;
+            out.text(ObbyEventField::Reason, &format!("{reason:?}"));
+        }
+        Event::NickInUse { refused, trying } => {
+            out.kind = ObbyEventKind::NickInUse;
+            out.text(ObbyEventField::Refused, refused);
+            out.text(ObbyEventField::Trying, trying);
+        }
+        Event::Changed { .. } => out.kind = ObbyEventKind::Changed,
+        Event::LinkDead => out.kind = ObbyEventKind::LinkDead,
+        Event::Reconnect { after_ms } => {
+            out.kind = ObbyEventKind::Reconnect;
+            out.number(ObbyEventField::AfterMs, *after_ms);
+        }
+        Event::ReconnectGaveUp => out.kind = ObbyEventKind::ReconnectGaveUp,
+        Event::CommandTimedOut { command } => {
+            out.kind = ObbyEventKind::CommandTimedOut;
+            out.text(ObbyEventField::Command, command);
+        }
+        #[cfg(feature = "obby")]
+        Event::CommandsChanged => out.kind = ObbyEventKind::CommandsChanged,
+        #[cfg(feature = "voice")]
+        Event::Voice { channel, .. } => {
+            out.kind = ObbyEventKind::Voice;
+            out.text(ObbyEventField::Channel, channel);
+        }
+        Event::Typing {
+            target,
+            nick,
+            typing,
+        } => {
+            out.kind = ObbyEventKind::Typing;
+            out.text(ObbyEventField::Target, target);
+            out.text(ObbyEventField::Nick, nick);
+            out.number(ObbyEventField::Typing, u64::from(*typing));
+        }
+        Event::Presence { nick, online } => {
+            out.kind = ObbyEventKind::Presence;
+            out.text(ObbyEventField::Nick, nick);
+            out.number(ObbyEventField::Online, u64::from(*online));
+        }
+        Event::Reply {
+            severity,
+            command,
+            code,
+            text,
+            ..
+        } => {
+            out.kind = ObbyEventKind::Reply;
+            out.text(ObbyEventField::Severity, &format!("{severity:?}").to_lowercase());
+            out.text(ObbyEventField::Command, command);
+            out.text(ObbyEventField::Code, code);
+            out.text(ObbyEventField::Text, text);
+        }
+        Event::Raw { .. } => out.kind = ObbyEventKind::Raw,
+        // Event is non-exhaustive, so a version of the engine newer than this ABI reaches a C
+        // caller as an unknown kind with its JSON intact rather than as a build failure
+        _ => {}
+    }
+    out
+}
+
+/// Create a client.
+///
+/// Returns null when `config` is null, or when its `nick` is null or not valid UTF-8.
+///
+/// # Safety
+/// `config` must be null or point to a readable [`ObbyConfig`] whose string fields are each null or
+/// a NUL-terminated, valid UTF-8 C string, all valid for reads for the duration of this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_new(config: *const ObbyConfig) -> *mut ObbyClient {
+    let Some(config) = (unsafe { config.as_ref() }) else {
+        return ptr::null_mut();
+    };
+    let Some(nick) = (unsafe { str_from_ptr(config.nick) }) else {
+        return ptr::null_mut();
+    };
+
+    let mut settings = Config::new(nick);
+    if let Some(username) = unsafe { str_from_ptr(config.username) } {
+        settings.username = username.to_owned();
+    }
+    if let Some(realname) = unsafe { str_from_ptr(config.realname) } {
+        settings.realname = realname.to_owned();
+    }
+    settings.password = unsafe { str_from_ptr(config.password) }.map(ToOwned::to_owned);
+    if config.retention > 0 {
+        settings.retention = config.retention;
+    }
+
+    Box::into_raw(Box::new(ObbyClient(Client::new(settings))))
+}
+
+/// Submit a command built here rather than parsed from JSON.
+///
+/// Returns false when the client is null or a required string is null or not valid UTF-8.
+unsafe fn submit(client: *mut ObbyClient, command: impl FnOnce() -> Option<Command>) -> bool {
+    let Some(client) = (unsafe { as_client(client) }) else {
+        return false;
+    };
+    let Some(command) = command() else {
+        return false;
+    };
+    client.command(command);
+    true
+}
+
+/// Join a channel, with `key` for a channel that needs one, or null.
+///
+/// # Safety
+/// `client` must be null or valid. Each string must be null or a NUL-terminated, valid UTF-8 C
+/// string, valid for reads for the duration of this call.
+///
+/// The handle must not be in use on another thread while this call runs.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_join(
+    client: *mut ObbyClient,
+    channel: *const c_char,
+    key: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Join {
+                channel: str_from_ptr(channel)?.to_owned(),
+                key: str_from_ptr(key).map(ToOwned::to_owned),
+            })
+        })
+    }
+}
+
+/// Leave a channel, with `reason` shown to the others in it, or null.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_part(
+    client: *mut ObbyClient,
+    channel: *const c_char,
+    reason: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Part {
+                channel: str_from_ptr(channel)?.to_owned(),
+                reason: str_from_ptr(reason).map(ToOwned::to_owned),
+            })
+        })
+    }
+}
+
+/// Say something to a channel or a person.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_send_message(
+    client: *mut ObbyClient,
+    target: *const c_char,
+    text: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Message {
+                target: str_from_ptr(target)?.to_owned(),
+                text: str_from_ptr(text)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Send a notice, which by convention must never be auto-replied to.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_send_notice(
+    client: *mut ObbyClient,
+    target: *const c_char,
+    text: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Notice {
+                target: str_from_ptr(target)?.to_owned(),
+                text: str_from_ptr(text)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Send a `CTCP ACTION`, the third-person form.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_send_action(
+    client: *mut ObbyClient,
+    target: *const c_char,
+    text: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Action {
+                target: str_from_ptr(target)?.to_owned(),
+                text: str_from_ptr(text)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Change our nick.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_set_nick(
+    client: *mut ObbyClient,
+    nick: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Nick {
+                nick: str_from_ptr(nick)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Set or clear a channel's topic. A null `topic` asks for the current one.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_set_topic(
+    client: *mut ObbyClient,
+    channel: *const c_char,
+    topic: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Topic {
+                channel: str_from_ptr(channel)?.to_owned(),
+                topic: str_from_ptr(topic).map(ToOwned::to_owned),
+            })
+        })
+    }
+}
+
+/// Go away with a message, or come back by passing null.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_set_away(
+    client: *mut ObbyClient,
+    message: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Away {
+                message: str_from_ptr(message).map(ToOwned::to_owned),
+            })
+        })
+    }
+}
+
+/// Quit, with a reason or null.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_quit(
+    client: *mut ObbyClient,
+    reason: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Quit {
+                reason: str_from_ptr(reason).map(ToOwned::to_owned),
+            })
+        })
+    }
+}
+
+/// Send one raw protocol line, without the trailing CRLF, for anything this ABI does not name.
+///
+/// # Safety
+/// As [`obby_client_join`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_send_raw(
+    client: *mut ObbyClient,
+    line: *const c_char,
+) -> bool {
+    unsafe {
+        submit(client, || {
+            Some(Command::Raw {
+                line: str_from_ptr(line)?.to_owned(),
+            })
+        })
+    }
+}
+
+/// Take the next event, or null when there are none.
+///
+/// The caller owns what comes back and releases it with [`obby_event_free`].
+///
+/// # Safety
+/// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
+///
+/// The handle must not be in use on another thread while this call runs.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_client_poll_event(client: *mut ObbyClient) -> *mut ObbyEvent {
+    let Some(client) = (unsafe { as_client(client) }) else {
+        return ptr::null_mut();
+    };
+    let Some(event) = client.poll_event() else {
+        return ptr::null_mut();
+    };
+    Box::into_raw(Box::new(event_out(&event)))
+}
+
+/// What kind of event this is.
+///
+/// A null event reads as [`ObbyEventKind::Unknown`], so a caller that skipped the null check gets a
+/// kind it already has to handle rather than a crash.
+///
+/// # Safety
+/// `event` must be null or a valid, non-freed pointer from [`obby_client_poll_event`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_event_get_kind(event: *const ObbyEvent) -> ObbyEventKind {
+    unsafe { event.as_ref() }.map_or(ObbyEventKind::Unknown, |event| event.kind)
+}
+
+/// One of the event's string fields, or null when this event has no such field.
+///
+/// The pointer borrows from the event and is invalid once [`obby_event_free`] runs.
+///
+/// # Safety
+/// `event` must be null or a valid, non-freed pointer from [`obby_client_poll_event`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_event_text(
+    event: *const ObbyEvent,
+    field: ObbyEventField,
+) -> *const c_char {
+    let Some(event) = (unsafe { event.as_ref() }) else {
+        return ptr::null();
+    };
+    event
+        .text
+        .iter()
+        .find(|(name, _)| *name == field)
+        .map_or(ptr::null(), |(_, value)| value.as_ptr())
+}
+
+/// One of the event's numeric fields, written to `out`.
+///
+/// Returns false, and leaves `out` alone, when this event has no such field.
+///
+/// # Safety
+/// `event` must be null or a valid, non-freed pointer from [`obby_client_poll_event`]. `out` must
+/// be null or point to a writable `uint64_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_event_number(
+    event: *const ObbyEvent,
+    field: ObbyEventField,
+    out: *mut u64,
+) -> bool {
+    let Some(event) = (unsafe { event.as_ref() }) else {
+        return false;
+    };
+    let Some((_, value)) = event.numbers.iter().find(|(name, _)| *name == field) else {
+        return false;
+    };
+    if let Some(out) = unsafe { out.as_mut() } {
+        *out = *value;
+    }
+    true
+}
+
+/// The whole event as JSON, for the parts this ABI does not flatten into fields.
+///
+/// The pointer borrows from the event and is invalid once [`obby_event_free`] runs.
+///
+/// # Safety
+/// `event` must be null or a valid, non-freed pointer from [`obby_client_poll_event`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_event_json(event: *const ObbyEvent) -> *const c_char {
+    unsafe { event.as_ref() }.map_or(ptr::null(), |event| event.json.as_ptr())
+}
+
+/// Release an event.
+///
+/// # Safety
+/// `event` must be null, or a pointer from [`obby_client_poll_event`] that has not already been
+/// passed here. Every string read from it is invalid afterwards.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn obby_event_free(event: *mut ObbyEvent) {
+    if event.is_null() {
+        return;
+    }
+    drop(unsafe { Box::from_raw(event) });
 }
 
 #[cfg(test)]
@@ -392,7 +967,7 @@ mod tests {
 
     /// Drain every pending event as parsed JSON, freeing the string that carried it.
     fn events(client: *mut ObbyClient) -> serde_json::Value {
-        let raw = unsafe { obby_client_poll_events(client) };
+        let raw = unsafe { obby_client_poll_events_json(client) };
         assert!(!raw.is_null(), "a live client always produces JSON");
         let text = unsafe { CStr::from_ptr(raw) }.to_str().unwrap().to_string();
         unsafe { obby_client_free_string(raw) };
@@ -402,7 +977,7 @@ mod tests {
     #[test]
     fn drives_the_whole_surface_through_the_c_api() {
         let config = config_json("tester");
-        let client = unsafe { obby_client_new(config.as_ptr()) };
+        let client = unsafe { obby_client_new_from_json(config.as_ptr()) };
         assert!(!client.is_null());
 
         unsafe { obby_client_connected(client) };
@@ -439,7 +1014,7 @@ mod tests {
         );
 
         let join = CString::new(r##"{"command":"join","channel":"#test","key":null}"##).unwrap();
-        assert!(unsafe { obby_client_command(client, join.as_ptr()) });
+        assert!(unsafe { obby_client_command_from_json(client, join.as_ptr()) });
         assert_eq!(drain(client), "JOIN #test\r\n");
 
         let model_raw = unsafe { obby_client_model_json(client) };
@@ -478,7 +1053,7 @@ mod tests {
             assert!(bytes.ptr.is_null());
             assert_eq!(bytes.len, 0);
 
-            assert!(obby_client_poll_events(ptr::null_mut()).is_null());
+            assert!(obby_client_poll_events_json(ptr::null_mut()).is_null());
 
             let mut out_ms = 42u64;
             assert!(!obby_client_poll_timeout(ptr::null_mut(), &raw mut out_ms));
@@ -488,7 +1063,7 @@ mod tests {
             );
 
             let ok = CString::new(r#"{"command":"quit","reason":null}"#).unwrap();
-            assert!(!obby_client_command(ptr::null_mut(), ok.as_ptr()));
+            assert!(!obby_client_command_from_json(ptr::null_mut(), ok.as_ptr()));
 
             assert!(obby_client_model_json(ptr::null_mut()).is_null());
         }
@@ -497,7 +1072,7 @@ mod tests {
     #[test]
     fn a_null_data_pointer_with_a_nonzero_length_is_ignored_not_dereferenced() {
         let config = config_json("nully");
-        let client = unsafe { obby_client_new(config.as_ptr()) };
+        let client = unsafe { obby_client_new_from_json(config.as_ptr()) };
         unsafe {
             obby_client_handle_bytes(client, ptr::null(), 10);
             obby_client_handle_bytes(client, ptr::null(), 0);
@@ -507,41 +1082,113 @@ mod tests {
 
     #[test]
     fn a_null_out_ms_is_never_written_through() {
-        let client = unsafe { obby_client_new(config_json("nully").as_ptr()) };
+        let client = unsafe { obby_client_new_from_json(config_json("nully").as_ptr()) };
         unsafe {
             assert!(!obby_client_poll_timeout(client, ptr::null_mut()));
             obby_client_free(client);
         }
     }
 
+    /// A config naming only a nick, which is all the typed constructor requires.
+    fn config(nick: &CStr) -> ObbyConfig {
+        ObbyConfig {
+            nick: nick.as_ptr(),
+            username: ptr::null(),
+            realname: ptr::null(),
+            password: ptr::null(),
+            retention: 0,
+        }
+    }
+
+    #[test]
+    fn a_c_caller_never_has_to_touch_json() {
+        let nick = c"typed";
+        let settings = config(nick);
+        let client = unsafe { obby_client_new(&raw const settings) };
+        assert!(!client.is_null());
+
+        unsafe { obby_client_connected(client) };
+        assert!(drain(client).contains("NICK typed"));
+
+        let welcome = c":s 001 typed :Welcome\r\n";
+        unsafe {
+            obby_client_handle_bytes(client, welcome.to_bytes().as_ptr(), welcome.to_bytes().len());
+        }
+
+        let event = unsafe { obby_client_poll_event(client) };
+        assert!(!event.is_null());
+        assert_eq!(unsafe { obby_event_get_kind(event) }, ObbyEventKind::Registered);
+        let nick_field = unsafe { obby_event_text(event, ObbyEventField::Nick) };
+        assert_eq!(unsafe { CStr::from_ptr(nick_field) }, c"typed");
+        assert!(unsafe { obby_event_text(event, ObbyEventField::Account) }.is_null());
+        assert!(!unsafe { obby_event_json(event) }.is_null());
+        unsafe { obby_event_free(event) };
+
+        assert!(unsafe { obby_client_join(client, c"#obby".as_ptr(), ptr::null()) });
+        assert!(unsafe {
+            obby_client_send_message(client, c"#obby".as_ptr(), c"hello".as_ptr())
+        });
+        assert!(unsafe { obby_client_quit(client, c"bye".as_ptr()) });
+        let sent = drain(client);
+        assert!(sent.contains("JOIN #obby"));
+        assert!(sent.contains("PRIVMSG #obby hello"));
+        assert!(sent.contains("QUIT bye"));
+
+        unsafe { obby_client_free(client) };
+    }
+
+    #[test]
+    fn a_command_with_a_missing_string_is_refused_rather_than_sent() {
+        let nick = c"typed";
+        let settings = config(nick);
+        let client = unsafe { obby_client_new(&raw const settings) };
+        assert!(!unsafe { obby_client_join(client, ptr::null(), ptr::null()) });
+        assert!(!unsafe { obby_client_send_message(client, c"#obby".as_ptr(), ptr::null()) });
+        assert!(!unsafe { obby_client_join(ptr::null_mut(), c"#obby".as_ptr(), ptr::null()) });
+        unsafe { obby_client_free(client) };
+    }
+
+    #[test]
+    fn an_event_read_after_the_kind_it_does_not_have_answers_absent() {
+        assert_eq!(
+            unsafe { obby_event_get_kind(ptr::null()) },
+            ObbyEventKind::Unknown
+        );
+        assert!(unsafe { obby_event_text(ptr::null(), ObbyEventField::Nick) }.is_null());
+        let mut out = 0;
+        assert!(!unsafe { obby_event_number(ptr::null(), ObbyEventField::AfterMs, &raw mut out) });
+        unsafe { obby_event_free(ptr::null_mut()) };
+    }
+
     #[test]
     fn a_null_config_pointer_fails_to_construct_a_client() {
         assert!(unsafe { obby_client_new(ptr::null()) }.is_null());
+        assert!(unsafe { obby_client_new_from_json(ptr::null()) }.is_null());
     }
 
     #[test]
     fn invalid_utf8_never_reaches_the_json_parser() {
         let bad = CString::new(vec![0xFF, 0xFE, b'{']).unwrap();
-        assert!(unsafe { obby_client_new(bad.as_ptr()) }.is_null());
+        assert!(unsafe { obby_client_new_from_json(bad.as_ptr()) }.is_null());
 
-        let client = unsafe { obby_client_new(config_json("badutf8").as_ptr()) };
-        assert!(!unsafe { obby_client_command(client, bad.as_ptr()) });
+        let client = unsafe { obby_client_new_from_json(config_json("badutf8").as_ptr()) };
+        assert!(!unsafe { obby_client_command_from_json(client, bad.as_ptr()) });
         unsafe { obby_client_free(client) };
     }
 
     #[test]
     fn malformed_json_is_rejected_not_panicked_on() {
         let not_json = CString::new("not json at all").unwrap();
-        assert!(unsafe { obby_client_new(not_json.as_ptr()) }.is_null());
+        assert!(unsafe { obby_client_new_from_json(not_json.as_ptr()) }.is_null());
 
         let wrong_shape = CString::new(r#"{"nick":123}"#).unwrap();
-        assert!(unsafe { obby_client_new(wrong_shape.as_ptr()) }.is_null());
+        assert!(unsafe { obby_client_new_from_json(wrong_shape.as_ptr()) }.is_null());
 
-        let client = unsafe { obby_client_new(config_json("badjson").as_ptr()) };
-        assert!(!unsafe { obby_client_command(client, not_json.as_ptr()) });
+        let client = unsafe { obby_client_new_from_json(config_json("badjson").as_ptr()) };
+        assert!(!unsafe { obby_client_command_from_json(client, not_json.as_ptr()) });
 
         let unknown_command = CString::new(r#"{"command":"not-a-real-command"}"#).unwrap();
-        assert!(!unsafe { obby_client_command(client, unknown_command.as_ptr()) });
+        assert!(!unsafe { obby_client_command_from_json(client, unknown_command.as_ptr()) });
 
         unsafe { obby_client_free(client) };
     }

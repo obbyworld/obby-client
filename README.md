@@ -19,7 +19,7 @@ bytes and the time, then drains bytes to write, events to render, and the moment
 waking. That is the whole interface, and it is the same interface in every language here, so a new
 client is a user interface and nothing else.
 
-## Install
+## Installation
 
 <details>
 <summary><b>Rust</b></summary>
@@ -102,7 +102,7 @@ The header is written to `bindings/obby-ffi/include/obby_ffi.h` and the librarie
 
 </details>
 
-## Use it
+## Usage
 
 The engine is a state machine you feed and drain. Four ways in: construction, `command` for what the
 user wants, `handle_bytes` for whatever the socket read, and `tick` for the time. Three ways out:
@@ -237,7 +237,11 @@ own.
 ```c
 #include "obby_ffi.h"
 
-obby_client_t *client = obby_client_new("{\"nick\":\"mynick\"}");
+// the socket is yours: any host, any port, TLS or not
+int fd = connect_to("irc.example.org", 6667);
+
+obby_config_t config = {.nick = "mynick"};
+obby_client_t *client = obby_client_new(&config);
 obby_client_connected(client);
 
 obby_bytes_t out = obby_client_poll_transmit(client);
@@ -245,18 +249,32 @@ write(fd, out.ptr, out.len);
 obby_client_free_bytes(out);
 
 obby_client_handle_bytes(client, buffer, length);
-char *events = obby_client_poll_events(client);
-obby_client_free_string(events);
 
+obby_event_t *event = obby_client_poll_event(client);
+if (obby_event_get_kind(event) == OBBY_EVENT_KIND_REGISTERED) {
+    printf("registered as %s\n", obby_event_text(event, OBBY_EVENT_FIELD_NICK));
+    obby_client_join(client, "#obby", NULL);
+}
+obby_event_free(event);
+
+obby_client_send_message(client, "#obby", "hello");
 obby_client_free(client);
 ```
+
+Config, commands and events are C types. `obby_event_get_kind` says what an event is,
+`obby_event_text` and `obby_event_number` read its fields, and `obby_event_json` gives the whole
+body for the parts the ABI does not flatten, such as a voice frame. JSON stays available for the
+long tail through `obby_client_command_from_json` and `obby_client_new_from_json`.
 
 A handle is not synchronised. Never touch one from two threads at once, not even for two calls that
 only read. Give each thread its own handle, or take your own lock.
 
+[`bindings/obby-ffi/tests/smoke.c`](bindings/obby-ffi/tests/smoke.c) is a complete program, built
+and run by `make c-smoke`.
+
 </details>
 
-## Develop
+## Development
 
 ```sh
 make check   # after every change

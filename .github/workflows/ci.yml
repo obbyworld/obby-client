@@ -94,6 +94,7 @@ jobs:
       - run: make wasm
       # the C header is generated, so a drifted one means the ABI changed without anyone saying so
       - run: make header && git diff --exit-code bindings/obby-ffi/include
+      - run: make c-smoke
       - run: make dart
 
   hygiene:

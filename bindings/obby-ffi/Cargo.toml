@@ -15,6 +15,14 @@ keywords.workspace = true
 [lib]
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[features]
+# the shipped C library speaks everything an Obby client needs; a host that wants a smaller one
+# builds with --no-default-features and adds back what it uses
+default = ["obby", "voice", "e2ee"]
+obby = ["obby-client/obby"]
+voice = ["obby-client/voice"]
+e2ee = ["obby-client/e2ee"]
+
 [dependencies]
 obby-client = { workspace = true, features = ["std", "serde"] }
 serde_json.workspace = true
