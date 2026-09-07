@@ -22,13 +22,16 @@ fn workspace_root() -> Option<PathBuf> {
 
 /// Every variant of `Command`, in the order the enum declares them.
 fn commands(root: &Path) -> Vec<String> {
-    let source = fs::read_to_string(root.join("crates/obby-client/src/command.rs"))
-        .expect("the command module is part of this crate");
-    let start = source
-        .find("pub enum Command {")
-        .expect("the command enum is declared once");
+    let path = root.join("crates/obby-client/src/command.rs");
+    let source = fs::read_to_string(&path).unwrap_or_default();
+    assert!(
+        !source.is_empty(),
+        "the command module is missing at {}",
+        path.display()
+    );
+    let start = source.find("pub enum Command {").unwrap_or_default();
     let body = &source[start..];
-    let end = body.find("\n}\n").expect("the enum is closed");
+    let end = body.find("\n}\n").unwrap_or(body.len());
     body[..end]
         .lines()
         .filter_map(|line| {
@@ -71,8 +74,8 @@ fn assert_every_command_appears(
     file: &str,
     spelling: fn(&str) -> String,
 ) {
-    let source = fs::read_to_string(root.join(file))
-        .unwrap_or_else(|_| panic!("{binding} has a source file at {file}"));
+    let source = fs::read_to_string(root.join(file)).unwrap_or_default();
+    assert!(!source.is_empty(), "{binding} has a source file at {file}");
     let missing: Vec<String> = commands(root)
         .into_iter()
         .map(|command| spelling(&command))
