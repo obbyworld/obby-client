@@ -1,0 +1,87 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - paragraph [ref=e4]: version 0.2.0 · GPL-3.0-or-later
+    - heading "obby-client" [level=1] [ref=e5]
+    - paragraph [ref=e6]: A full IRCv3 client engine, with the Obby extensions on top, as one Rust core with bindings for C, TypeScript, Python and Dart. It talks to any IRC server.
+    - paragraph [ref=e7]: It opens no socket, reads no clock and draws nothing. Your app hands it bytes and the time, then drains bytes to write, events to render, and the moment it next wants waking. A new client is a user interface and nothing else.
+    - generic [ref=e8]:
+      - link [ref=e9] [cursor=pointer]:
+        - /url: https://crates.io/crates/obby-client
+        - img "crates.io" [ref=e10]
+      - link [ref=e11] [cursor=pointer]:
+        - /url: https://www.npmjs.com/package/obby-client
+        - img "npm" [ref=e12]
+      - link [ref=e13] [cursor=pointer]:
+        - /url: https://pypi.org/project/obby-client/
+        - img "PyPI" [ref=e14]
+      - link [ref=e15] [cursor=pointer]:
+        - /url: https://pub.dev/packages/obby_client
+        - img "pub.dev" [ref=e16]
+      - link [ref=e17] [cursor=pointer]:
+        - /url: https://github.com/obbyworld/obby-client/actions/workflows/ci.yml
+        - img "CI" [ref=e18]
+  - generic [ref=e19]:
+    - heading "Reference" [level=2] [ref=e20]
+    - generic [ref=e21]:
+      - link [ref=e22] [cursor=pointer]:
+        - /url: rust/obby_client/
+        - text: Rust
+        - generic [ref=e23]:
+          - text: The engine and the model.
+          - code [ref=e24]: cargo add obby-client
+      - link [ref=e25] [cursor=pointer]:
+        - /url: typescript/
+        - text: TypeScript
+        - generic [ref=e26]:
+          - text: Browser and Bun, fully typed.
+          - code [ref=e27]: npm i obby-client
+      - link [ref=e28] [cursor=pointer]:
+        - /url: python/obby_client.html
+        - text: Python
+        - generic [ref=e29]:
+          - text: Wheels for every platform.
+          - code [ref=e30]: pip install obby-client
+      - link [ref=e31] [cursor=pointer]:
+        - /url: dart/
+        - text: Dart
+        - generic [ref=e32]:
+          - text: Over the C ABI.
+          - code [ref=e33]: dart pub add obby_client
+      - link "C The generated header, typed config, commands and events" [ref=e34] [cursor=pointer]:
+        - /url: c/obby_ffi.h
+        - text: C
+        - generic [ref=e35]: The generated header, typed config, commands and events
+      - 'link "obby-proto The wire format alone: lines, tags, casemapping, ISUPPORT" [ref=e36] [cursor=pointer]':
+        - /url: rust/obby_proto/
+        - text: obby-proto
+        - generic [ref=e37]: "The wire format alone: lines, tags, casemapping, ISUPPORT"
+  - generic [ref=e38]:
+    - heading "The whole interface" [level=2] [ref=e39]
+    - generic [ref=e40]:
+      - generic [ref=e41]: // bytes and time go in client.handleConnected(); client.handleBytes(chunk); client.tick(monotonicMs, unixMs); // bytes, events and the next wake-up come out client.pollTransmit(); client.pollEvents(); client.pollTimeout();
+      - generic [ref=e42]: // every command is a method client.join("#obby"); client.sendMessage("#obby", "hello"); client.setTyping("#obby", "active"); client.fetchHistory("#obby", null, 50); // and the model is always readable client.model().channels;
+  - generic [ref=e43]:
+    - heading "In a page, with no build step" [level=2] [ref=e44]
+    - generic [ref=e45]: "<script type=\"module\"> import init, { ObbyClient } from \"https://cdn.jsdelivr.net/npm/obby-client/obby_wasm.js\"; await init(); </script>"
+  - generic [ref=e46]:
+    - heading "For agents" [level=2] [ref=e47]
+    - generic [ref=e48]:
+      - link "llms.txt Every type that crosses a binding and the whole C ABI, in one file" [ref=e49] [cursor=pointer]:
+        - /url: llms.txt
+        - text: llms.txt
+        - generic [ref=e50]: Every type that crosses a binding and the whole C ABI, in one file
+      - link "Source The engine, the bindings, the transcripts it is tested against" [ref=e51] [cursor=pointer]:
+        - /url: https://github.com/obbyworld/obby-client
+        - text: Source
+        - generic [ref=e52]: The engine, the bindings, the transcripts it is tested against
+  - contentinfo [ref=e53]:
+    - text: "Built from the code on every push. Protocol:"
+    - link "IRCv3" [ref=e54] [cursor=pointer]:
+      - /url: https://ircv3.net/irc/
+    - text: ","
+    - link "Modern IRC" [ref=e55] [cursor=pointer]:
+      - /url: https://modern.ircdocs.horse/
+    - text: ", and the"
+    - link "Obby extensions" [ref=e56] [cursor=pointer]:
+      - /url: https://github.com/obbyworld/extensions
+    - text: .
