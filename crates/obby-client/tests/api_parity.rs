@@ -26,10 +26,20 @@ fn block<'a>(source: &'a str, marker: &str) -> &'a str {
     &body[..body.find("\n}\n").unwrap_or(body.len())]
 }
 
+/// Read a source file with its line endings normalised.
+///
+/// A Windows checkout carries CRLF, and every scan below matches on line shape, so a stray `\r`
+/// would silently change where a block ends and what this test believes it read.
+fn source(path: &Path) -> String {
+    fs::read_to_string(path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n")
+}
+
 /// Every variant of `Command`, in the order the enum declares them.
 fn commands(root: &Path) -> Vec<String> {
     let path = root.join("crates/obby-client/src/command.rs");
-    let source = fs::read_to_string(&path).unwrap_or_default();
+    let source = source(&path);
     assert!(
         !source.is_empty(),
         "the command module is missing at {}",
@@ -77,7 +87,7 @@ fn assert_every_command_appears(
     file: &str,
     spelling: fn(&str) -> String,
 ) {
-    let source = fs::read_to_string(root.join(file)).unwrap_or_default();
+    let source = source(&root.join(file));
     assert!(!source.is_empty(), "{binding} has a source file at {file}");
     let missing: Vec<String> = commands(root)
         .into_iter()
@@ -135,7 +145,7 @@ fn every_command_has_a_method_in_every_binding() {
 /// `new` is the constructor pyo3 exposes as `__init__`, which is what the stub has to spell.
 fn python_methods(root: &Path) -> Vec<String> {
     let path = root.join("bindings/obby-python/src/lib.rs");
-    let source = fs::read_to_string(&path).unwrap_or_default();
+    let source = source(&path);
     assert!(
         !source.is_empty(),
         "the Python binding is missing at {}",
@@ -162,7 +172,7 @@ fn every_python_method_is_in_the_type_stub() {
     };
 
     let stub_path = "bindings/obby-python/obby_client.pyi";
-    let stub = fs::read_to_string(root.join(stub_path)).unwrap_or_default();
+    let stub = source(&root.join(stub_path));
     assert!(!stub.is_empty(), "the type stub is missing at {stub_path}");
 
     let missing: Vec<String> = python_methods(&root)
