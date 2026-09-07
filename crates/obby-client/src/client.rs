@@ -1147,6 +1147,11 @@ impl Client {
                 .parent
                 .as_deref()
                 .is_some_and(|parent| self.batches.is_within(parent, CHATHISTORY_BATCH));
+        let closed = if closed.kind == MULTILINE_BATCH {
+            join_multiline(closed)
+        } else {
+            closed
+        };
         for message in closed.messages {
             self.fold(&message, historical);
         }
@@ -1572,6 +1577,46 @@ const MAX_INBOUND_LINE: usize = obby_proto::MAX_TAG_BYTES + obby_proto::MAX_LINE
 /// The batch type that carries replayed history.
 const CHATHISTORY_BATCH: &str = "chathistory";
 
+/// Put a message a server split across several lines back together.
+///
+/// The lines arrive as separate `PRIVMSG`s inside a `draft/multiline` batch, and a host that
+/// treated them as separate messages would show one paragraph as several. A line tagged
+/// `draft/multiline-concat` continues the one before it with nothing between them; every other
+/// line starts a new line of the same message.
+fn join_multiline(closed: ClosedBatch) -> ClosedBatch {
+    let mut joined: Vec<Message> = Vec::new();
+    for message in closed.messages {
+        // the tag carries no value, so its presence is the whole signal
+        let continues = message.tags.contains(MULTILINE_CONCAT);
+        let is_text = message.is("PRIVMSG") || message.is("NOTICE");
+        let Some(previous) = joined.last_mut() else {
+            joined.push(message);
+            continue;
+        };
+        // a line of another kind inside the batch is not part of the text, so it stays whole
+        if !is_text || !previous.is(&message.command) || previous.param(0) != message.param(0) {
+            joined.push(message);
+            continue;
+        }
+        let separator = if continues { "" } else { "\n" };
+        let addition = message.param(1).unwrap_or_default().to_owned();
+        if let Some(text) = previous.params.get_mut(1) {
+            text.push_str(separator);
+            text.push_str(&addition);
+        }
+    }
+    ClosedBatch {
+        messages: joined,
+        ..closed
+    }
+}
+
+/// The batch type that wraps one message a server split across several lines.
+const MULTILINE_BATCH: &str = "draft/multiline";
+
+/// The tag on a line that continues the previous one with no line break between them.
+const MULTILINE_CONCAT: &str = "draft/multiline-concat";
+
 /// Read the severity off a `standard-replies` verb.
 fn severity_of(command: &str) -> Option<Severity> {
     match command.to_ascii_uppercase().as_str() {
@@ -1971,6 +2016,47 @@ mod batch_tests {
             .iter()
             .map(|m| m.text.clone())
             .collect()
+    }
+
+    #[test]
+    fn a_multiline_message_arrives_as_one_message() {
+        let mut client = registered();
+        client.handle_bytes(b":s BATCH +m draft/multiline #obby\r\n");
+        client.handle_bytes(b"@batch=m :bob!u@h PRIVMSG #obby :first line\r\n");
+        client.handle_bytes(b"@batch=m :bob!u@h PRIVMSG #obby :second line\r\n");
+        client.handle_bytes(b":s BATCH -m\r\n");
+
+        assert_eq!(
+            texts(&client),
+            vec!["first line\nsecond line".to_string()],
+            "a paragraph the server split must not reach the host as several messages"
+        );
+    }
+
+    #[test]
+    fn a_concat_tagged_line_continues_the_one_before_it() {
+        let mut client = registered();
+        client.handle_bytes(b":s BATCH +m draft/multiline #obby\r\n");
+        client.handle_bytes(b"@batch=m :bob!u@h PRIVMSG #obby :one long \r\n");
+        client
+            .handle_bytes(b"@batch=m;draft/multiline-concat :bob!u@h PRIVMSG #obby :sentence\r\n");
+        client.handle_bytes(b":s BATCH -m\r\n");
+
+        assert_eq!(texts(&client), vec!["one long sentence".to_string()]);
+    }
+
+    #[test]
+    fn a_line_of_another_kind_inside_a_multiline_batch_stays_its_own_message() {
+        let mut client = registered();
+        client.handle_bytes(b":s BATCH +m draft/multiline #obby\r\n");
+        client.handle_bytes(b"@batch=m :bob!u@h PRIVMSG #obby :spoken\r\n");
+        client.handle_bytes(b"@batch=m :bob!u@h NOTICE #obby :noticed\r\n");
+        client.handle_bytes(b":s BATCH -m\r\n");
+
+        assert_eq!(
+            texts(&client),
+            vec!["spoken".to_string(), "noticed".to_string()]
+        );
     }
 
     #[test]
