@@ -1599,7 +1599,7 @@ fn join_multiline(closed: ClosedBatch) -> ClosedBatch {
             continue;
         }
         let separator = if continues { "" } else { "\n" };
-        let addition = message.param(1).unwrap_or_default().to_owned();
+        let addition = alloc::string::String::from(message.param(1).unwrap_or_default());
         if let Some(text) = previous.params.get_mut(1) {
             text.push_str(separator);
             text.push_str(&addition);
