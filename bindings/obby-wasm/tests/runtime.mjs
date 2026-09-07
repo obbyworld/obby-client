@@ -14,7 +14,7 @@ const wasm = fileURLToPath(new URL("../pkg/obby_wasm_bg.wasm", import.meta.url))
 await init({ module_or_path: readFileSync(wasm) });
 
 const client = new ObbyClient({ nick: "runtime" });
-client.connected();
+client.handleConnected();
 client.handleBytes(
   new TextEncoder().encode(":server 001 runtime :Welcome\r\n:runtime JOIN #obby\r\n"),
 );

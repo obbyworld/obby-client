@@ -113,7 +113,7 @@ it onto the wrong letter, so an unadvertised letter is treated as taking none: a
 the cheaper mistake than a shifted one.
 
 **Reconnection is the engine's, dialling is the host's.** The `Client` survives a dead link with its
-state intact and says when to retry; the host opens the socket. The replay after `connected`
+state intact and says when to retry; the host opens the socket. The replay after `handle_connected`
 authenticates, rejoins with the stored channel key, resubscribes MONITOR and metadata, and asks for
 history from the last message it saw.
 

@@ -16,7 +16,7 @@ import init, { ObbyClient, type Command, type ObbyEvent } from "obby-client";
 
 await init();
 const client = new ObbyClient({ nick: "mynick" });
-client.connected();
+client.handleConnected();
 
 socket.onmessage = (message) => {
   client.handleBytes(new Uint8Array(message.data));

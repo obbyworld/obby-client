@@ -88,7 +88,7 @@ fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::erro
 
     let mut client = Client::new(config);
     let mut transport = Transport::open()?;
-    client.connected();
+    client.handle_connected();
 
     let started = Instant::now();
     let mut joined = false;

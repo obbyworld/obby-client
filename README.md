@@ -57,8 +57,8 @@ release, and `init()` fetches the `.wasm` next to the module, which both CDNs se
 </script>
 ```
 
-Pin a version for anything you ship, with `obby-client@0.1.2` in place of `obby-client`, so a
-release never changes under your users.
+Pin a version for anything you ship: write `obby-client@0.1.3` in place of `obby-client`. An
+unpinned URL updates itself, so a later release would reach a page you have already shipped.
 
 </details>
 
@@ -120,7 +120,7 @@ use obby_client::{Client, Command, Config, Event, Now};
 let mut socket = TcpStream::connect(("irc.libera.chat", 6667))?;
 
 let mut client = Client::new(Config::new("mynick"));
-client.connected();
+client.handleConnected();
 
 let mut buf = [0u8; 8192];
 loop {
@@ -162,7 +162,7 @@ const socket = new WebSocket("wss://irc.example.org/webirc");
 socket.binaryType = "arraybuffer";
 
 const client = new ObbyClient({ nick: "mynick" });
-socket.onopen = () => client.connected();
+socket.onopen = () => client.handleConnected();
 
 socket.onmessage = (message) => {
   client.handleBytes(new Uint8Array(message.data));
@@ -208,7 +208,7 @@ from obby_client import Client
 sock = socketlib.create_connection(("irc.example.org", 6667))
 
 client = Client({"nick": "mynick"})
-client.connected()
+client.handleConnected()
 
 while (out := client.poll_transmit()) is not None:
     sock.sendall(out)
@@ -232,7 +232,7 @@ import 'package:obby_client/obby_client.dart';
 final socket = await Socket.connect('irc.example.org', 6667);
 
 final client = ObbyClient({'nick': 'mynick'});
-client.connected();
+client.handleConnected();
 
 socket.listen((data) {
   client.handleBytes(data);
@@ -261,7 +261,7 @@ int fd = connect_to("irc.example.org", 6667);
 
 obby_config_t config = {.nick = "mynick"};
 obby_client_t *client = obby_client_new(&config);
-obby_client_connected(client);
+obby_client_handle_connected(client);
 
 obby_bytes_t out = obby_client_poll_transmit(client);
 write(fd, out.ptr, out.len);

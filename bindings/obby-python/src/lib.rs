@@ -37,7 +37,7 @@ pub struct Client {
 
 #[pymethods]
 impl Client {
-    /// Build an engine that has not connected yet. Nothing is written until [`Self::connected`].
+    /// Build an engine that has not connected yet. Nothing is written until [`Self::handle_connected`].
     ///
     /// `config` is a dict, or JSON text, with the same shape as `obby_client::Config`. Only `nick`
     /// is required; every other field has a default.
@@ -55,13 +55,13 @@ impl Client {
     /// Tell the engine the transport is up. Queues the registration burst.
     fn connected(&mut self, py: Python<'_>) {
         let inner = &mut self.inner;
-        py.detach(move || inner.connected());
+        py.detach(move || inner.handle_connected());
     }
 
     /// Tell the engine its transport died. The model survives, so a reconnect can resume from it.
     fn disconnected(&mut self, py: Python<'_>) {
         let inner = &mut self.inner;
-        py.detach(move || inner.disconnected());
+        py.detach(move || inner.handle_disconnected());
     }
 
     /// Advance the clock. `monotonic_ms` drives every deadline; `unix_ms` only stamps a message

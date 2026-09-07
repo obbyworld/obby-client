@@ -15,7 +15,7 @@ and points the client at it. Every release includes a build for Linux, macOS and
 import 'package:obby_client/obby_client.dart';
 
 final client = ObbyClient({'nick': 'mynick'}, libraryPath: 'libobby_ffi.so');
-client.connected();
+client.handleConnected();
 
 socket.listen((data) {
   client.handleBytes(data);

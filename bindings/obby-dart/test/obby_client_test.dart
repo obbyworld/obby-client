@@ -16,7 +16,7 @@ void main() {
   test('connecting queues the registration burst', () {
     final client = open();
     addTearDown(client.close);
-    client.connected();
+    client.handleConnected();
 
     final sent = <String>[];
     for (var chunk = client.pollTransmit(); chunk != null; chunk = client.pollTransmit()) {
@@ -69,7 +69,7 @@ void main() {
     final client = open();
     addTearDown(client.close);
     expect(client.pollTimeout(), isNull);
-    client.connected();
+    client.handleConnected();
     expect(client.pollTimeout(), isNotNull);
   });
 
@@ -77,6 +77,6 @@ void main() {
     final client = open();
     client.close();
     client.close();
-    expect(client.connected, throwsStateError);
+    expect(client.handleConnected, throwsStateError);
   });
 }

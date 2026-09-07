@@ -18,7 +18,7 @@ use obby_client::{Client, Config, Event};
 /// Replay one transcript, returning the snapshot body.
 fn replay(source: &str) -> String {
     let mut client = Client::new(Config::new("me"));
-    client.connected();
+    client.handle_connected();
 
     let mut sent = Vec::new();
     let mut events = Vec::new();

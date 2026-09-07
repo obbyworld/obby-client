@@ -10,7 +10,7 @@ await init();
 // only the nick is required, and every other field has a default
 const client = new ObbyClient({ nick: "typed", retention: 200 });
 
-client.connected();
+client.handleConnected();
 
 const join: Command = { type: "join", channel: "#obby", key: null };
 client.command(join);

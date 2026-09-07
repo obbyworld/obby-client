@@ -153,29 +153,29 @@ pub unsafe extern "C" fn obby_client_free(client: *mut ObbyClient) {
     drop(unsafe { Box::from_raw(client) });
 }
 
-/// Tell the engine the transport is up. See [`obby_client::Client::connected`].
+/// Tell the engine the transport is up. See [`obby_client::Client::handle_connected`].
 ///
 /// # Safety
 /// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
 ///
 /// The handle must not be in use on another thread while this call runs.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn obby_client_connected(client: *mut ObbyClient) {
+pub unsafe extern "C" fn obby_client_handle_connected(client: *mut ObbyClient) {
     if let Some(client) = unsafe { as_client(client) } {
-        client.connected();
+        client.handle_connected();
     }
 }
 
-/// Tell the engine its transport died. See [`obby_client::Client::disconnected`].
+/// Tell the engine its transport died. See [`obby_client::Client::handle_disconnected`].
 ///
 /// # Safety
 /// `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
 ///
 /// The handle must not be in use on another thread while this call runs.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn obby_client_disconnected(client: *mut ObbyClient) {
+pub unsafe extern "C" fn obby_client_handle_disconnected(client: *mut ObbyClient) {
     if let Some(client) = unsafe { as_client(client) } {
-        client.disconnected();
+        client.handle_disconnected();
     }
 }
 
@@ -980,7 +980,7 @@ mod tests {
         let client = unsafe { obby_client_new_from_json(config.as_ptr()) };
         assert!(!client.is_null());
 
-        unsafe { obby_client_connected(client) };
+        unsafe { obby_client_handle_connected(client) };
         let sent = drain(client);
         assert!(sent.contains("CAP LS 302"));
         assert!(sent.contains("NICK tester"));
@@ -1027,7 +1027,7 @@ mod tests {
         let model: serde_json::Value = serde_json::from_str(&model_text).unwrap();
         assert_eq!(model["me"]["nick"], "tester");
 
-        unsafe { obby_client_disconnected(client) };
+        unsafe { obby_client_handle_disconnected(client) };
         unsafe { obby_client_free(client) };
     }
 
@@ -1043,8 +1043,8 @@ mod tests {
     fn every_function_survives_a_null_client() {
         unsafe {
             obby_client_free(ptr::null_mut());
-            obby_client_connected(ptr::null_mut());
-            obby_client_disconnected(ptr::null_mut());
+            obby_client_handle_connected(ptr::null_mut());
+            obby_client_handle_disconnected(ptr::null_mut());
             obby_client_handle_bytes(ptr::null_mut(), ptr::null(), 0);
             obby_client_handle_bytes(ptr::null_mut(), b"x".as_ptr(), 1);
             obby_client_tick(ptr::null_mut(), 0, 0);
@@ -1107,7 +1107,7 @@ mod tests {
         let client = unsafe { obby_client_new(&raw const settings) };
         assert!(!client.is_null());
 
-        unsafe { obby_client_connected(client) };
+        unsafe { obby_client_handle_connected(client) };
         assert!(drain(client).contains("NICK typed"));
 
         let welcome = c":s 001 typed :Welcome\r\n";

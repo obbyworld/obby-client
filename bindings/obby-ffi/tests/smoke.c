@@ -28,7 +28,7 @@ int main(void) {
     obby_client_t *client = obby_client_new(&config);
     assert(client != NULL);
 
-    obby_client_connected(client);
+    obby_client_handle_connected(client);
     expect_sent(client, "CAP LS 302");
 
     const char *welcome = ":server 001 ctest :Welcome\r\n";

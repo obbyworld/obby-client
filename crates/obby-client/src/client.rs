@@ -144,7 +144,7 @@ pub enum Event {
     /// The link went quiet for too long and should be treated as dead. The host closes its socket
     /// and waits for [`Event::Reconnect`].
     LinkDead,
-    /// Time to open a new connection. The host dials and calls [`Client::connected`].
+    /// Time to open a new connection. The host dials and calls [`Client::handle_connected`].
     Reconnect {
         /// How long the host should wait first.
         #[cfg_attr(feature = "ts", ts(type = "number"))]
@@ -246,7 +246,7 @@ pub struct Client {
 }
 
 impl Client {
-    /// Build an engine that has not connected yet. Nothing is written until [`Client::connected`].
+    /// Build an engine that has not connected yet. Nothing is written until [`Client::handle_connected`].
     pub fn new(config: Config) -> Self {
         let mut config = config;
         // a host that deserialised a partial config gets these filled in rather than registering
@@ -294,7 +294,7 @@ impl Client {
     ///
     /// The host calls this once the socket is open and the TLS handshake, if any, has finished. The
     /// engine has no way to know that on its own.
-    pub fn connected(&mut self) {
+    pub fn handle_connected(&mut self) {
         self.phase = Phase::Negotiating;
         self.backoff.reset();
         self.timers.clear(&Deadline::Reconnect);
@@ -321,7 +321,7 @@ impl Client {
     ///
     /// The engine decides when to try again and says so with [`Event::Reconnect`]. The host owns
     /// every socket, and this is the only thing it has to report.
-    pub fn disconnected(&mut self) {
+    pub fn handle_disconnected(&mut self) {
         self.phase = Phase::Disconnected;
         self.batches.drop_all();
         self.caps = Caps::default();
@@ -1339,7 +1339,7 @@ mod tests {
     #[test]
     fn registration_starts_with_cap_ls_then_nick_and_user() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         assert_eq!(
             drain(&mut client),
             "CAP LS 302\r\nNICK me\r\nUSER me 0 * me\r\n"
@@ -1351,7 +1351,7 @@ mod tests {
         let mut config = Config::new("me");
         config.password = Some("hunter2".to_string());
         let mut client = Client::new(config);
-        client.connected();
+        client.handle_connected();
         let sent = drain(&mut client);
         let pass = sent.find("PASS").expect("pass is sent");
         let nick = sent.find("NICK").expect("nick is sent");
@@ -1384,7 +1384,7 @@ mod tests {
     #[test]
     fn does_not_end_negotiation_until_every_request_is_answered() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         drain(&mut client);
 
         client.handle_bytes(b":s CAP * LS :multi-prefix away-notify\r\n");
@@ -1404,7 +1404,7 @@ mod tests {
     #[test]
     fn waits_for_the_last_line_of_a_multiline_cap_ls() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         drain(&mut client);
 
         client.handle_bytes(b":s CAP * LS * :multi-prefix\r\n");
@@ -1423,7 +1423,7 @@ mod tests {
     #[test]
     fn ends_negotiation_when_the_server_offers_nothing_we_want() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         drain(&mut client);
         client.handle_bytes(b":s CAP * LS :some-cap-we-do-not-know\r\n");
         assert_eq!(drain(&mut client), "CAP END\r\n");
@@ -1432,7 +1432,7 @@ mod tests {
     #[test]
     fn cap_new_requests_a_late_capability() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         drain(&mut client);
         client.handle_bytes(b":s CAP * LS :\r\n");
         drain(&mut client);
@@ -1504,7 +1504,7 @@ mod tests {
     /// Negotiate up to the point where only SASL is left outstanding.
     fn negotiated(config: Config) -> Client {
         let mut client = Client::new(config);
-        client.connected();
+        client.handle_connected();
         drain(&mut client);
         client.handle_bytes(b":s CAP * LS :sasl=PLAIN,EXTERNAL\r\n");
         client.handle_bytes(b":s CAP * ACK :sasl\r\n");
@@ -1575,7 +1575,7 @@ mod tests {
     #[test]
     fn skips_authentication_when_no_mechanism_is_shared() {
         let mut client = Client::new(with_sasl());
-        client.connected();
+        client.handle_connected();
         drain(&mut client);
         client.handle_bytes(b":s CAP * LS :sasl=SCRAM-SHA-256\r\n");
         client.handle_bytes(b":s CAP * ACK :sasl\r\n");
@@ -1600,7 +1600,7 @@ mod tests {
         let mut config = Config::new("me");
         config.alt_nicks = alloc::vec!["me2".to_string(), "me3".to_string()];
         let mut client = Client::new(config);
-        client.connected();
+        client.handle_connected();
         drain(&mut client);
 
         client.handle_bytes(b":s 433 * me :Nickname is already in use\r\n");
@@ -1795,7 +1795,7 @@ mod time_tests {
     #[test]
     fn a_quiet_link_gets_a_keepalive_ping() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         sent(&mut client);
 
         client.tick(at(PING_KEEPALIVE_MS - 1));
@@ -1808,7 +1808,7 @@ mod time_tests {
     #[test]
     fn a_ping_with_no_answer_declares_the_link_dead() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         client.tick(at(PING_KEEPALIVE_MS));
         events(&mut client);
 
@@ -1822,7 +1822,7 @@ mod time_tests {
     #[test]
     fn any_traffic_at_all_proves_the_link_is_alive() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         client.tick(at(PING_KEEPALIVE_MS));
         sent(&mut client);
 
@@ -1842,7 +1842,7 @@ mod time_tests {
             None,
             "nothing is pending before connecting"
         );
-        client.connected();
+        client.handle_connected();
         assert_eq!(client.poll_timeout(), Some(PING_KEEPALIVE_MS));
     }
 
@@ -1855,7 +1855,7 @@ mod time_tests {
         client.handle_bytes(b"@msgid=x :bob!u@h PRIVMSG #obby :hello\r\n");
         events(&mut client);
 
-        client.disconnected();
+        client.handle_disconnected();
         let folded = client.isupport().fold("#obby");
         assert!(
             client.model().channel(&folded).is_some(),
@@ -1865,8 +1865,8 @@ mod time_tests {
         let first = events(&mut client);
         assert!(matches!(first.as_slice(), [Event::Reconnect { .. }]));
 
-        client.connected();
-        client.disconnected();
+        client.handle_connected();
+        client.handle_disconnected();
         assert!(
             matches!(events(&mut client).as_slice(), [Event::Reconnect { after_ms }] if *after_ms == ReconnectBackoff::DEFAULT_BASE_MS),
             "a successful connection resets the backoff"
@@ -1878,7 +1878,7 @@ mod time_tests {
         let mut client = Client::new(Config::new("me"));
         let mut delays = Vec::new();
         for _ in 0..3 {
-            client.disconnected();
+            client.handle_disconnected();
             for event in events(&mut client) {
                 if let Event::Reconnect { after_ms } = event {
                     delays.push(after_ms);
@@ -1901,7 +1901,7 @@ mod time_tests {
         );
         assert_eq!(sent(&mut client), "WHO #obby\r\n");
 
-        client.connected();
+        client.handle_connected();
         sent(&mut client);
         client.handle_bytes(b":s CAP * LS :labeled-response\r\n");
         client.handle_bytes(b":s CAP * ACK :labeled-response\r\n");
@@ -1919,7 +1919,7 @@ mod time_tests {
     #[test]
     fn a_labelled_command_that_is_never_answered_times_out() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         client.handle_bytes(b":s CAP * LS :labeled-response\r\n");
         client.handle_bytes(b":s CAP * ACK :labeled-response\r\n");
         client.send_labeled(&Message::new("WHO", ["#obby"]));
@@ -1937,7 +1937,7 @@ mod time_tests {
     #[test]
     fn an_answered_command_does_not_time_out() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         client.handle_bytes(b":s CAP * LS :labeled-response\r\n");
         client.handle_bytes(b":s CAP * ACK :labeled-response\r\n");
         let label = client
@@ -2045,7 +2045,7 @@ mod command_tests {
 
     fn ready(caps: &[u8]) -> Client {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         client.handle_bytes(b":s CAP * LS :echo-message labeled-response\r\n");
         client.handle_bytes(caps);
         client.handle_bytes(b":s 001 me :Welcome\r\n");
@@ -2233,7 +2233,7 @@ mod resume_tests {
     /// A client that has been around: registered, in two channels, with history.
     fn established() -> Client {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         client.handle_bytes(b":s CAP * LS :draft/chathistory\r\n");
         client.handle_bytes(b":s CAP * ACK :draft/chathistory\r\n");
         client.handle_bytes(b":s 001 me :Welcome\r\n");
@@ -2250,8 +2250,8 @@ mod resume_tests {
     #[test]
     fn a_reconnect_rejoins_every_channel_and_asks_only_for_what_it_missed() {
         let mut client = established();
-        client.disconnected();
-        client.connected();
+        client.handle_disconnected();
+        client.handle_connected();
         sent(&mut client);
 
         client.handle_bytes(b":s CAP * LS :draft/chathistory\r\n");
@@ -2280,7 +2280,7 @@ mod resume_tests {
             Some(1)
         );
 
-        client.disconnected();
+        client.handle_disconnected();
 
         let channel = client
             .model()
@@ -2296,7 +2296,7 @@ mod resume_tests {
     #[test]
     fn a_first_connection_replays_nothing() {
         let mut client = Client::new(Config::new("me"));
-        client.connected();
+        client.handle_connected();
         sent(&mut client);
         client.handle_bytes(b":s 001 me :Welcome\r\n");
         assert_eq!(sent(&mut client), "", "there is nothing to resume into");
@@ -2306,7 +2306,7 @@ mod resume_tests {
     fn capabilities_are_renegotiated_rather_than_assumed_to_survive() {
         let mut client = established();
         assert!(client.caps().has("draft/chathistory"));
-        client.disconnected();
+        client.handle_disconnected();
         assert!(
             !client.caps().has("draft/chathistory"),
             "the new link is a new negotiation; assuming otherwise sends commands the server never agreed to"
@@ -2557,7 +2557,7 @@ mod scram_tests {
             nonce: "rOprNGfwEbeRWgbNEkqO".to_string(),
         });
         let mut client = Client::new(config);
-        client.connected();
+        client.handle_connected();
         client.handle_bytes(b":s CAP * LS :sasl=SCRAM-SHA-256,PLAIN\r\n");
         client.handle_bytes(b":s CAP * ACK :sasl\r\n");
         client
@@ -2651,7 +2651,7 @@ mod scram_tests {
             password: "pencil".to_string(),
         });
         let mut client = Client::new(config);
-        client.connected();
+        client.handle_connected();
         client.handle_bytes(b":s CAP * LS :sasl=SCRAM-SHA-256\r\n");
         client.handle_bytes(b":s CAP * ACK :sasl\r\n");
         let sent = sent(&mut client);
@@ -2678,7 +2678,7 @@ mod config_tests {
     fn a_blank_username_is_filled_in_from_the_nick() {
         let config: Config = serde_json::from_str(r#"{"nick":"me"}"#).expect("deserialise");
         let mut client = Client::new(config);
-        client.connected();
+        client.handle_connected();
         let mut sent = String::new();
         while let Some(bytes) = client.poll_transmit() {
             sent.push_str(&String::from_utf8_lossy(&bytes));

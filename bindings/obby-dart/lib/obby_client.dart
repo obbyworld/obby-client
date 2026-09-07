@@ -69,15 +69,15 @@ class ObbyClient {
   }
 
   /// Tell the engine the transport is up. Queues the registration burst.
-  void connected() {
+  void handleConnected() {
     _alive();
-    _bindings.connected(_handle);
+    _bindings.handleConnected(_handle);
   }
 
   /// Tell the engine its transport died. The model survives, so a reconnect resumes from it.
-  void disconnected() {
+  void handleDisconnected() {
     _alive();
-    _bindings.disconnected(_handle);
+    _bindings.handleDisconnected(_handle);
   }
 
   /// Feed whatever the transport read. Partial lines are held until the rest arrives.

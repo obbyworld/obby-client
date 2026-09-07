@@ -58,7 +58,7 @@ pub struct ObbyClient {
 
 #[wasm_bindgen]
 impl ObbyClient {
-    /// Build an engine that has not connected yet. Nothing is written until [`Self::connected`].
+    /// Build an engine that has not connected yet. Nothing is written until [`Self::handle_connected`].
     ///
     /// `config` is a JS object with the same shape as [`Config`]. Only `nick` is required; every
     /// other field has a default.
@@ -71,13 +71,15 @@ impl ObbyClient {
     }
 
     /// Tell the engine the transport is up. Queues the registration burst.
-    pub fn connected(&mut self) {
-        self.inner.connected();
+    #[wasm_bindgen(js_name = handleConnected)]
+    pub fn handle_connected(&mut self) {
+        self.inner.handle_connected();
     }
 
     /// Tell the engine its transport died. The model survives, so a reconnect can resume from it.
-    pub fn disconnected(&mut self) {
-        self.inner.disconnected();
+    #[wasm_bindgen(js_name = handleDisconnected)]
+    pub fn handle_disconnected(&mut self) {
+        self.inner.handle_disconnected();
     }
 
     /// Advance the clock. `monotonicMs` drives every deadline; `unixMs` only stamps a message the
@@ -173,7 +175,7 @@ mod tests {
     #[test]
     fn connected_queues_the_registration_burst() {
         let mut client = new_client();
-        client.connected();
+        client.handle_connected();
         let first = client
             .poll_transmit()
             .expect("registration starts on connect");
@@ -183,7 +185,7 @@ mod tests {
     #[test]
     fn poll_transmit_drains_one_chunk_at_a_time() {
         let mut client = new_client();
-        client.connected();
+        client.handle_connected();
         assert!(client.poll_transmit().is_some(), "CAP LS");
         assert!(client.poll_transmit().is_some(), "NICK");
         assert!(client.poll_transmit().is_some(), "USER");
@@ -201,7 +203,7 @@ mod tests {
     #[test]
     fn tick_advances_the_clock_and_reports_the_next_deadline() {
         let mut client = new_client();
-        client.connected();
+        client.handle_connected();
         while client.poll_transmit().is_some() {}
         let first_deadline = client
             .poll_timeout()

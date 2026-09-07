@@ -264,24 +264,24 @@ struct obby_client_t *obby_client_new_from_json(const char *config_json);
 void obby_client_free(struct obby_client_t *client);
 
 /**
- * Tell the engine the transport is up. See [`obby_client::Client::connected`].
+ * Tell the engine the transport is up. See [`obby_client::Client::handle_connected`].
  *
  * # Safety
  * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
  *
  * The handle must not be in use on another thread while this call runs.
  */
-void obby_client_connected(struct obby_client_t *client);
+void obby_client_handle_connected(struct obby_client_t *client);
 
 /**
- * Tell the engine its transport died. See [`obby_client::Client::disconnected`].
+ * Tell the engine its transport died. See [`obby_client::Client::handle_disconnected`].
  *
  * # Safety
  * `client` must be null or a valid, non-freed pointer from [`obby_client_new`].
  *
  * The handle must not be in use on another thread while this call runs.
  */
-void obby_client_disconnected(struct obby_client_t *client);
+void obby_client_handle_disconnected(struct obby_client_t *client);
 
 /**
  * Feed bytes read from the transport.

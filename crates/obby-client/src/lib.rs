@@ -8,7 +8,7 @@
 //! use obby_client::{Client, Config, Event};
 //!
 //! let mut client = Client::new(Config::new("mynick"));
-//! client.connected();
+//! client.handle_connected();
 //!
 //! // whatever the host wrote is now waiting to go on the wire
 //! let first = client.poll_transmit().expect("registration starts on connect");

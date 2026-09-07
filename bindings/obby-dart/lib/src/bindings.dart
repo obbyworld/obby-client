@@ -53,11 +53,11 @@ class Bindings {
       freeClient = library.lookupFunction<_FreeNative, _Free>(
         'obby_client_free',
       ),
-      connected = library.lookupFunction<_VoidOnClientNative, _VoidOnClient>(
-        'obby_client_connected',
+      handleConnected = library.lookupFunction<_VoidOnClientNative, _VoidOnClient>(
+        'obby_client_handle_connected',
       ),
-      disconnected = library.lookupFunction<_VoidOnClientNative, _VoidOnClient>(
-        'obby_client_disconnected',
+      handleDisconnected = library.lookupFunction<_VoidOnClientNative, _VoidOnClient>(
+        'obby_client_handle_disconnected',
       ),
       handleBytes = library.lookupFunction<_HandleBytesNative, _HandleBytes>(
         'obby_client_handle_bytes',
@@ -93,8 +93,8 @@ class Bindings {
 
   final Pointer<ObbyClientHandle> Function(Pointer<Utf8>) newClient;
   final void Function(Pointer<ObbyClientHandle>) freeClient;
-  final void Function(Pointer<ObbyClientHandle>) connected;
-  final void Function(Pointer<ObbyClientHandle>) disconnected;
+  final void Function(Pointer<ObbyClientHandle>) handleConnected;
+  final void Function(Pointer<ObbyClientHandle>) handleDisconnected;
   final void Function(Pointer<ObbyClientHandle>, Pointer<Uint8>, int)
   handleBytes;
   final ObbyBytes Function(Pointer<ObbyClientHandle>) pollTransmit;
