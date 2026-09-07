@@ -92,6 +92,13 @@ wasm: ## browser and bun package
 	wasm-pack build bindings/obby-wasm --target web --out-dir pkg
 	# wasm-pack names the package after the crate, and npm shows the name a consumer types
 	cd bindings/obby-wasm/pkg && npm pkg set name=obby-client
+	@if command -v wasm-opt >/dev/null; then \
+	  wasm-opt -O --enable-bulk-memory --enable-nontrapping-float-to-int \
+	    bindings/obby-wasm/pkg/obby_wasm_bg.wasm -o bindings/obby-wasm/pkg/obby_wasm_bg.wasm; \
+	  echo "optimised with $$(wasm-opt --version)"; \
+	else \
+	  echo "wasm-opt is not installed, shipping the unoptimised module"; \
+	fi
 
 c-smoke: ## compile and run the C program that drives the whole ABI
 	cargo build -p obby-ffi --release

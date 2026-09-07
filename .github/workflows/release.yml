@@ -106,6 +106,9 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - run: npm install -g npm@latest
       - uses: taiki-e/install-action@wasm-pack
+      # wasm-pack would otherwise download its own wasm-opt from a GitHub release on first use,
+      # which has already failed one run
+      - run: sudo apt-get install -y binaryen
       - run: make wasm
       # provenance is documented as automatic under trusted publishing, but asking for it explicitly
       # costs nothing and has been reported as needed

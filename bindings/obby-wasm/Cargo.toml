@@ -12,10 +12,11 @@ authors.workspace = true
 # crates.io release of it would be a source tree nobody can use
 publish = false
 
-# wasm-pack ships an old wasm-opt that rejects the features rustc now emits by default, so we name
-# them rather than turning the optimiser off
+# wasm-pack downloads its own wasm-opt from a GitHub release on first use, which has already failed
+# a CI run, and the version it picks is old enough to reject the features rustc now emits. `make
+# wasm` runs the wasm-opt on PATH instead, with the flags those features need.
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-O", "--enable-bulk-memory", "--enable-nontrapping-float-to-int"]
+wasm-opt = false
 
 [lib]
 crate-type = ["cdylib", "rlib"]

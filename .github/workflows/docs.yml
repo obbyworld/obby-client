@@ -31,6 +31,9 @@ jobs:
           python-version: "3.12"
       - uses: dart-lang/setup-dart@v1
       - uses: taiki-e/install-action@wasm-pack
+      # wasm-pack would otherwise download its own wasm-opt from a GitHub release on first use,
+      # which has already failed one run
+      - run: sudo apt-get install -y binaryen
       - uses: taiki-e/install-action@v2
         with:
           tool: cbindgen
