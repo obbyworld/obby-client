@@ -26,7 +26,6 @@ const MAX_ITERATIONS: u32 = 1_000_000;
 /// Why an exchange could not continue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[non_exhaustive]
 pub enum ScramError {
     /// The server's message was not the shape the specification defines.

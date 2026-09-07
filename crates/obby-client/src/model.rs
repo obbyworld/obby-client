@@ -26,8 +26,10 @@ pub const DEFAULT_RETENTION: usize = 5000;
 #[cfg_attr(feature = "ts", ts(rename = "MessageOrder"))]
 pub struct MessageKey {
     /// Milliseconds since the epoch, from `server-time` when the server sent one.
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub time_ms: u64,
     /// Assigned in arrival order, unique for the life of the connection.
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     pub seq: u64,
 }
 
@@ -35,7 +37,7 @@ pub struct MessageKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
-#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum MessageKind {
     /// An ordinary message.
@@ -391,7 +393,7 @@ pub struct Channel {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "ts", ts(rename = "Conversation"))]
-pub struct Query {
+pub struct Conversation {
     /// Their nick, as they spell it.
     pub nick: String,
     /// What was said.
@@ -408,6 +410,7 @@ pub struct Query {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "LocalUser"))]
 pub struct Me {
     /// Our current nick.
     pub nick: String,
@@ -432,9 +435,10 @@ pub struct Model {
     /// Who we are.
     pub me: Me,
     channels: BTreeMap<CaseFolded, Channel>,
-    queries: BTreeMap<CaseFolded, Query>,
+    conversations: BTreeMap<CaseFolded, Conversation>,
     people: BTreeMap<CaseFolded, Person>,
     retention: usize,
+    #[cfg_attr(feature = "ts", ts(type = "number"))]
     next_seq: u64,
 }
 
@@ -450,7 +454,7 @@ impl Model {
         Self {
             me: Me::default(),
             channels: BTreeMap::new(),
-            queries: BTreeMap::new(),
+            conversations: BTreeMap::new(),
             people: BTreeMap::new(),
             retention: retention.max(1),
             next_seq: 0,
@@ -500,18 +504,20 @@ impl Model {
     }
 
     /// A private conversation.
-    pub fn query(&self, key: &CaseFolded) -> Option<&Query> {
-        self.queries.get(key)
+    pub fn conversation(&self, key: &CaseFolded) -> Option<&Conversation> {
+        self.conversations.get(key)
     }
 
     /// A private conversation, created if we have not seen it.
-    pub fn query_mut(&mut self, key: CaseFolded, nick: &str) -> &mut Query {
+    pub fn conversation_mut(&mut self, key: CaseFolded, nick: &str) -> &mut Conversation {
         let retention = self.retention;
-        self.queries.entry(key).or_insert_with(|| Query {
-            nick: nick.to_string(),
-            log: Log::with_retention(retention),
-            ..Query::default()
-        })
+        self.conversations
+            .entry(key)
+            .or_insert_with(|| Conversation {
+                nick: nick.to_string(),
+                log: Log::with_retention(retention),
+                ..Conversation::default()
+            })
     }
 
     /// Record that someone started or stopped composing a message somewhere.
@@ -521,7 +527,7 @@ impl Model {
     pub fn set_typing(&mut self, target: &CaseFolded, who: CaseFolded, typing: bool) -> bool {
         let set = match self.channels.get_mut(target) {
             Some(channel) => &mut channel.typing,
-            None => match self.queries.get_mut(target) {
+            None => match self.conversations.get_mut(target) {
                 Some(query) => &mut query.typing,
                 None => return false,
             },
@@ -552,13 +558,13 @@ impl Model {
     }
 
     /// A private conversation we already know, for changing what is in it.
-    pub fn existing_query_mut(&mut self, key: &CaseFolded) -> Option<&mut Query> {
-        self.queries.get_mut(key)
+    pub fn existing_conversation_mut(&mut self, key: &CaseFolded) -> Option<&mut Conversation> {
+        self.conversations.get_mut(key)
     }
 
     /// Every private conversation.
-    pub fn queries(&self) -> btree_map::Iter<'_, CaseFolded, Query> {
-        self.queries.iter()
+    pub fn conversations(&self) -> btree_map::Iter<'_, CaseFolded, Conversation> {
+        self.conversations.iter()
     }
 
     /// Rename someone everywhere they appear, which is what a NICK means.
@@ -573,9 +579,9 @@ impl Model {
                 channel.members.insert(new.clone(), membership);
             }
         }
-        if let Some(mut query) = self.queries.remove(&old) {
+        if let Some(mut query) = self.conversations.remove(&old) {
             query.nick = to.to_string();
-            self.queries.insert(new.clone(), query);
+            self.conversations.insert(new.clone(), query);
         }
         if let Some(mut person) = self.people.remove(&old) {
             person.nick = to.to_string();
@@ -592,7 +598,7 @@ impl Model {
     /// which a busy channel supplies for free.
     pub fn forget_strangers(&mut self) {
         let mut keep: alloc::collections::BTreeSet<CaseFolded> =
-            self.queries.keys().cloned().collect();
+            self.conversations.keys().cloned().collect();
         for channel in self.channels.values() {
             keep.extend(channel.members.keys().cloned());
         }
@@ -831,7 +837,7 @@ mod tests {
         }
         assert_eq!(channel.log.len(), 2);
 
-        let query = model.query_mut(map.fold("bob"), "bob");
+        let query = model.conversation_mut(map.fold("bob"), "bob");
         for i in 0..4 {
             query.log.insert(message(i, 100 + i, "bob", "x"));
         }

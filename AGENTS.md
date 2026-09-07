@@ -120,6 +120,12 @@ history from the last message it saw.
 **Nothing returns a `Result` during normal operation.** An unparseable line is counted and dropped.
 Everything else is a typed event.
 
+**The TypeScript definitions are generated, never written.** `make ts-types` derives them from the
+Rust with `ts-rs`, CI fails on drift, `make ts-check` type-checks a consumer against them and then
+runs that consumer against the built module. That last step exists because `tsc` alone only checks
+the generated file against itself: it cannot see that `serde_wasm_bindgen` hands JavaScript a `Map`
+where the definition says object.
+
 **Everything that crosses a binding serialises `snake_case`.** `Command`, `Event` and `Change` all
 have a `type` tag in `snake_case`, so a Python, Dart or JavaScript host reads one convention rather
 than guessing per type which side of the boundary chose the casing.

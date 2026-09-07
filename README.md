@@ -153,7 +153,7 @@ conversation, and the messages, capped per target by the retention you configure
 <summary><b>The same loop in TypeScript</b></summary>
 
 ```ts
-import init, { ObbyClient, type Event } from "obby-client";
+import init, { ObbyClient, type ObbyEvent } from "obby-client";
 
 await init();
 
@@ -170,7 +170,7 @@ socket.onmessage = (message) => {
   for (let bytes; (bytes = client.pollTransmit()); ) socket.send(bytes);
 };
 
-client.command({ command: "join", channel: "#obby", key: null });
+client.command({ type: "join", channel: "#obby", key: null });
 ```
 
 Events drain as a batch, because one call across the WebAssembly boundary costs the same for one
@@ -185,10 +185,15 @@ for (const event of client.pollEvents()) {
   if (event.type === "registered") {
     // TypeScript knows this branch has `nick`, and that a join needs `channel` and `key`
     console.log(`registered as ${event.nick}`);
-    client.command({ command: "join", channel: "#obby", key: null });
+    client.command({ type: "join", channel: "#obby", key: null });
   }
 }
 ```
+
+The engine holds WebAssembly memory that the JavaScript collector knows nothing about, so release it
+when you are done: `client.free()`, or `using client = new ObbyClient(...)` where your runtime
+supports it. New event and command shapes arrive in minor releases, so keep a `default` branch
+rather than an exhaustiveness assertion.
 
 </details>
 
@@ -212,7 +217,7 @@ client.handle_bytes(sock.recv(4096))
 for event in client.poll_events():
     render(event)
 
-client.command({"command": "join", "channel": "#obby", "key": None})
+client.command({"type": "join", "channel": "#obby", "key": None})
 client.tick(monotonic_ms, unix_ms)
 ```
 

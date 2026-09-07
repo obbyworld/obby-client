@@ -12,7 +12,7 @@ Every shape is typed: `Command`, `Event`, `Model` and the rest are generated fro
 shipped in the package, so a mistyped field is a compile error rather than a runtime surprise.
 
 ```ts
-import init, { ObbyClient, type Command, type Event } from "obby-client";
+import init, { ObbyClient, type Command, type ObbyEvent } from "obby-client";
 
 await init();
 const client = new ObbyClient({ nick: "mynick" });
@@ -24,7 +24,7 @@ socket.onmessage = (message) => {
   for (let bytes; (bytes = client.pollTransmit()); ) socket.send(bytes);
 };
 
-client.command({ command: "join", channel: "#obby", key: null });
+client.command({ type: "join", channel: "#obby", key: null });
 ```
 
 `client.model()` returns everything the connection knows: channels, members, conversations and

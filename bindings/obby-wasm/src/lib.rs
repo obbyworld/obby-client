@@ -28,12 +28,22 @@ unsafe extern "C" {
     pub type CommandValue;
 
     /// Everything drained by [`ObbyClient::poll_events`], as TypeScript sees it.
-    #[wasm_bindgen(typescript_type = "Event[]")]
+    #[wasm_bindgen(typescript_type = "ObbyEvent[]")]
     pub type EventsValue;
 
     /// A [`obby_client::Model`], as TypeScript sees it.
     #[wasm_bindgen(typescript_type = "Model")]
     pub type ModelValue;
+}
+
+/// Serialise the way the generated types say we do.
+///
+/// The default serialiser hands JavaScript a `Map` for every map, `undefined` for every absent
+/// option, and a `BigInt` for every 64-bit number. The definitions promise a plain object, `null`
+/// and `number`, and this is what keeps that promise, so `JSON.stringify` and `Object.keys` work on
+/// anything this returns.
+fn to_js<T: serde::Serialize + ?Sized>(value: &T) -> Result<JsValue, serde_wasm_bindgen::Error> {
+    value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
 }
 
 /// One connection, wrapped for JavaScript.
@@ -119,13 +129,13 @@ impl ObbyClient {
     /// once per event is what actually saves work.
     #[wasm_bindgen(js_name = pollEvents)]
     pub fn poll_events(&mut self) -> Result<EventsValue, JsValue> {
-        Ok(serde_wasm_bindgen::to_value(&self.drain_events())?.unchecked_into())
+        Ok(to_js(&self.drain_events())?.unchecked_into())
     }
 
     /// Everything the connection knows, as a JS value: channels, members, conversations and
     /// messages. For a host that only wants the model, not a diff of what changed.
     pub fn model(&self) -> Result<ModelValue, JsValue> {
-        Ok(serde_wasm_bindgen::to_value(self.inner.model())?.unchecked_into())
+        Ok(to_js(self.inner.model())?.unchecked_into())
     }
 }
 
@@ -232,7 +242,7 @@ mod tests {
     #[test]
     fn command_json_matches_the_shape_a_js_host_sends() {
         let command: Command =
-            serde_json::from_str(r##"{"command":"join","channel":"#obby","key":null}"##)
+            serde_json::from_str(r##"{"type":"join","channel":"#obby","key":null}"##)
                 .expect("a command object with an explicit null key parses");
         assert_eq!(
             command,
@@ -245,7 +255,7 @@ mod tests {
 
     #[test]
     fn command_json_treats_a_missing_optional_field_as_none() {
-        let command: Command = serde_json::from_str(r#"{"command":"quit"}"#)
+        let command: Command = serde_json::from_str(r#"{"type":"quit"}"#)
             .expect("an omitted optional field defaults to None");
         assert_eq!(command, Command::Quit { reason: None });
     }

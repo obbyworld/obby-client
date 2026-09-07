@@ -3,27 +3,20 @@
 // The package's types are generated from the Rust, so this file is what proves they are still
 // usable: every shape a host touches, under `tsc --strict`, with no `any` anywhere.
 
-import init, { ObbyClient, type Command, type Event, type Model } from "../pkg/obby_wasm.js";
+import init, { ObbyClient, type Command, type Model, type ObbyEvent } from "../pkg/obby_wasm.js";
 
 await init();
 
-const client = new ObbyClient({
-  nick: "typed",
-  username: "typed",
-  realname: "typed",
-  password: null,
-  sasl: null,
-  retention: 200,
-  alt_nicks: [],
-});
+// only the nick is required, and every other field has a default
+const client = new ObbyClient({ nick: "typed", retention: 200 });
 
 client.connected();
 
-const join: Command = { command: "join", channel: "#obby", key: null };
+const join: Command = { type: "join", channel: "#obby", key: null };
 client.command(join);
-client.command({ command: "message", target: "#obby", text: "hello" });
+client.command({ type: "message", target: "#obby", text: "hello" });
 
-const events: Event[] = client.pollEvents();
+const events: ObbyEvent[] = client.pollEvents();
 for (const event of events) {
   switch (event.type) {
     case "registered":

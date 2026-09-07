@@ -56,8 +56,8 @@ pub use extensions::{
     Bot, BotCommand, Bots, Commands, Invitation, LinkPreview, PRIVILEGED_COMMANDS, is_privileged,
 };
 pub use model::{
-    Channel, DEFAULT_RETENTION, Log, Me, Membership, Message, MessageKey, MessageKind, Model,
-    Person, Query,
+    Channel, Conversation, DEFAULT_RETENTION, Log, Me, Membership, Message, MessageKey,
+    MessageKind, Model, Person,
 };
 pub use monitor::Monitor;
 pub use sasl::{Credentials, SaslFailure};

@@ -48,7 +48,17 @@ description: string | null, };
 /**
  * The bots we know about, keyed by their folded nick.
  */
-export type Bots = { known: { [key in string]?: Bot }, };
+export type BotRegistry = { known: { [key in string]?: Bot }, };
+
+/**
+ * What the server offers and what we hold.
+ */
+export type Capabilities = { available: { [key in string]?: string | null }, acknowledged: { [key in string]?: string | null }, 
+/**
+ * Capabilities we asked for and are still waiting on. Registration cannot finish while this is
+ * non-empty, because `CAP END` before the last reply loses the capability.
+ */
+pending: Array<string>, };
 
 /**
  * One capability the server advertised, with the value it carried if any.
@@ -64,16 +74,6 @@ name: string,
 value: string | null, };
 
 /**
- * What the server offers and what we hold.
- */
-export type Caps = { available: { [key in string]?: string | null }, acknowledged: { [key in string]?: string | null }, 
-/**
- * Capabilities we asked for and are still waiting on. Registration cannot finish while this is
- * non-empty, because `CAP END` before the last reply loses the capability.
- */
-pending: Array<string>, };
-
-/**
  * A nick or channel name folded under a server's casemapping.
  *
  * Every map keyed by a nick or a channel is keyed by this type, so that a raw `String` can never be
@@ -83,75 +83,6 @@ pending: Array<string>, };
  * came from the same connection, which is the only place they are ever used together.
  */
 export type CaseFolded = string;
-
-/**
- * What changed, for a host that wants to react without diffing the whole model.
- */
-export type Change = { "type": "message", 
-/**
- * The channel or nick it belongs to, as the server spells it.
- */
-target: string, 
-/**
- * Where it sits in that target's log.
- */
-key: MessageOrder, } | { "type": "joined", 
-/**
- * The channel.
- */
-channel: string, } | { "type": "parted", 
-/**
- * The channel.
- */
-channel: string, } | { "type": "members_changed", 
-/**
- * The channel.
- */
-channel: string, } | { "type": "topic_changed", 
-/**
- * The channel.
- */
-channel: string, } | { "type": "nick_changed", 
-/**
- * What they were called.
- */
-from: string, 
-/**
- * What they are called now.
- */
-to: string, } | { "type": "modes_changed", 
-/**
- * The channel.
- */
-channel: string, } | { "type": "read_marker", 
-/**
- * The channel or person.
- */
-target: string, } | { "type": "reacted", 
-/**
- * Where the message is.
- */
-target: string, 
-/**
- * The message reacted to.
- */
-msgid: string, } | { "type": "redacted", 
-/**
- * Where the message was.
- */
-target: string, 
-/**
- * The message deleted.
- */
-msgid: string, } | { "type": "metadata", 
-/**
- * Whose metadata changed.
- */
-target: string, 
-/**
- * The key that changed.
- */
-key: string, };
 
 /**
  * A channel we are in.
@@ -290,7 +221,7 @@ total: number, };
 /**
  * Something to do on this connection.
  */
-export type Command = { "command": "join", 
+export type Command = { "type": "join", 
 /**
  * The channel to join.
  */
@@ -298,7 +229,7 @@ channel: string,
 /**
  * Its key, when it has one.
  */
-key: string | null, } | { "command": "part", 
+key: string | null, } | { "type": "part", 
 /**
  * The channel to leave.
  */
@@ -306,7 +237,7 @@ channel: string,
 /**
  * Why, shown to the others in it.
  */
-reason: string | null, } | { "command": "message", 
+reason: string | null, } | { "type": "message", 
 /**
  * Where to say it.
  */
@@ -314,7 +245,7 @@ target: string,
 /**
  * What to say.
  */
-text: string, } | { "command": "notice", 
+text: string, } | { "type": "notice", 
 /**
  * Where to send it.
  */
@@ -322,7 +253,7 @@ target: string,
 /**
  * What to send.
  */
-text: string, } | { "command": "action", 
+text: string, } | { "type": "action", 
 /**
  * Where to send it.
  */
@@ -330,11 +261,11 @@ target: string,
 /**
  * What we are doing.
  */
-text: string, } | { "command": "nick", 
+text: string, } | { "type": "nick", 
 /**
  * The nick to take.
  */
-nick: string, } | { "command": "topic", 
+nick: string, } | { "type": "topic", 
 /**
  * The channel.
  */
@@ -342,11 +273,11 @@ channel: string,
 /**
  * The new topic, or nothing to clear it.
  */
-topic: string | null, } | { "command": "away", 
+topic: string | null, } | { "type": "away", 
 /**
  * The away message, or nothing to come back.
  */
-message: string | null, } | { "command": "typing", 
+message: string | null, } | { "type": "typing", 
 /**
  * Who we are typing to.
  */
@@ -354,7 +285,7 @@ target: string,
 /**
  * How far along we are.
  */
-state: Typing, } | { "command": "react", 
+state: TypingState, } | { "type": "react", 
 /**
  * The channel or person the message is in.
  */
@@ -366,7 +297,7 @@ msgid: string,
 /**
  * The emoji.
  */
-emoji: string, } | { "command": "unreact", 
+emoji: string, } | { "type": "unreact", 
 /**
  * The channel or person the message is in.
  */
@@ -378,7 +309,7 @@ msgid: string,
 /**
  * The emoji to remove.
  */
-emoji: string, } | { "command": "redact", 
+emoji: string, } | { "type": "redact", 
 /**
  * Where the message is.
  */
@@ -390,7 +321,7 @@ msgid: string,
 /**
  * Why, when the server wants a reason.
  */
-reason: string | null, } | { "command": "mark_read", 
+reason: string | null, } | { "type": "mark_read", 
 /**
  * The channel or person.
  */
@@ -398,7 +329,7 @@ target: string,
 /**
  * The `server-time` of the last message read.
  */
-timestamp: string, } | { "command": "history", 
+timestamp: string, } | { "type": "history", 
 /**
  * The channel or person.
  */
@@ -410,7 +341,7 @@ before: string | null,
 /**
  * How many to ask for.
  */
-limit: number, } | { "command": "set_metadata", 
+limit: number, } | { "type": "set_metadata", 
 /**
  * The key, such as `display-name`, `color` or `avatar`.
  */
@@ -418,19 +349,19 @@ key: string,
 /**
  * The value, or nothing to clear the key.
  */
-value: string | null, } | { "command": "subscribe_metadata", 
+value: string | null, } | { "type": "subscribe_metadata", 
 /**
  * The keys to watch.
  */
-keys: Array<string>, } | { "command": "watch", 
+keys: Array<string>, } | { "type": "watch", 
 /**
  * The nicks to watch.
  */
-nicks: Array<string>, } | { "command": "unwatch", 
+nicks: Array<string>, } | { "type": "unwatch", 
 /**
  * The nicks to stop watching.
  */
-nicks: Array<string>, } | { "command": "voice", 
+nicks: Array<string>, } | { "type": "voice", 
 /**
  * The channel to signal in.
  */
@@ -438,11 +369,11 @@ channel: string,
 /**
  * The frame, already encoded as the JSON that travels in the tag.
  */
-payload: string, } | { "command": "quit", 
+payload: string, } | { "type": "quit", 
 /**
  * Why.
  */
-reason: string | null, } | { "command": "raw", 
+reason: string | null, } | { "type": "raw", 
 /**
  * The line, without its terminator.
  */
@@ -462,30 +393,35 @@ nick: string,
 /**
  * The username sent in `USER`. Defaults to the nick.
  */
-username: string, 
+username?: string, 
 /**
  * The realname sent in `USER`. Defaults to the nick.
  */
-realname: string, 
+realname?: string, 
 /**
  * The server password, sent as `PASS` before anything else.
  */
-password: string | null, 
+password?: string, 
 /**
  * What to authenticate with, when the server offers `sasl`.
  */
-sasl: Credentials | null, 
+sasl?: SaslCredentials, 
 /**
  * How many messages each channel and conversation keeps.
  */
-retention: number, 
+retention?: number, 
 /**
  * Nicks to fall back through when the server says ours is taken during registration.
  *
  * Registration stalls forever if nobody answers a 433, so the engine walks this list and then
  * starts appending underscores rather than leaving the connection hung.
  */
-alt_nicks: Array<string>, };
+alt_nicks?: Array<string>, };
+
+/**
+ * How far the connection has got.
+ */
+export type ConnectionPhase = "disconnected" | "negotiating" | "registering" | "registered";
 
 /**
  * A private conversation with one other person.
@@ -513,112 +449,253 @@ read_marker: string | null,
 typing: Array<CaseFolded>, };
 
 /**
- * What to authenticate with.
+ * An invitation link to the network or to one channel.
  */
-export type Credentials = { "Plain": { 
+export type Invitation = { 
 /**
- * The account to log in as.
+ * The identifier used to delete it.
  */
-username: string, 
+share_id: string, 
 /**
- * Its password.
+ * The channel it joins, or nothing when it invites to the network.
  */
-password: string, } } | "External" | { "Scram": { 
+channel: string | null, 
 /**
- * The account to log in as.
+ * The link itself.
  */
-username: string, 
+url: string, 
 /**
- * Its password.
+ * When it was made, as the server spells it.
  */
-password: string, 
+created: string | null, 
 /**
- * Unpredictable bytes, never reused. The core has no entropy source, so the host supplies
- * this, and reusing one destroys the replay protection the mechanism exists for.
+ * How many people have used it.
  */
-nonce: string, } };
+redeemed: number, 
+/**
+ * What it is for.
+ */
+description: string | null, };
 
 /**
- * One named deadline a host can arm and later collect once it falls due.
- */
-export type Deadline = "PingKeepalive" | "DeadLink" | "Reconnect" | { "Typing": [string, string] };
-
-/**
- * Everything that can go wrong here: a doomed handshake, a ratchet that refuses to advance, or
- * a caller asking the state machine for a transition it does not allow.
- */
-export type E2eeError = "InvalidSignature" | "NonContributoryDh" | "Aead" | "Padding" | "TooManySkipped" | "CounterOverflow" | "NoChain" | { "FingerprintChanged": { 
-/**
- * The fingerprint pinned from an earlier conversation.
- */
-previous: Fingerprint, 
-/**
- * The fingerprint just observed.
- */
-current: Fingerprint, } } | "WrongState" | "Fragmentation" | "Internal";
-
-/**
- * The fragmentation envelope the real client uses to split a frame too large for one wire
- * line, on either carrier. The working client sends this, and no spec text describes it.
- */
-export type E2eeFragment = { 
-/**
- * The id every fragment of one split frame shares.
- */
-id: string, 
-/**
- * This fragment's 0-based index.
- */
-i: number, 
-/**
- * The total number of fragments in the set.
- */
-n: number, 
-/**
- * This fragment's slice of the encoded payload.
- */
-ct: Array<number>, };
-
-/**
- * One `t`/`v` protocol frame, exactly as the wire's client-only tag carries it (`init`,
- * `accept`, `reject`, `ack`, `close`) or, for `msg` and `media`, the `?obe2ee:`-prefixed body.
+ * A preview of a link someone posted, built by the server and attached to the message.
  *
- * `frag` is not a variant here: it wraps another frame's encoded bytes across several wire
- * lines and belongs to the transport that reassembles it, not to session logic. See [`Frag`].
+ * The server fetches the page; a client never does. There is no capability to negotiate, and the
+ * server refuses these tags from any sender but itself, so a peer cannot forge one.
  */
-export type E2eeFrame = { "Init": { 
+export type LinkPreview = { 
 /**
- * The offering side's prekey bundle.
+ * The page title. Always present when a preview exists at all.
  */
-bundle: PreKeyBundle, 
+title: string, 
 /**
- * The sender's SASL account, when it has one.
+ * A description of the page, when the page offered one.
  */
-account: string | null, } } | { "Accept": { 
+snippet: string | null, 
 /**
- * The answering side's handshake response.
+ * An image, already re-hosted by the server when it has a filehost configured.
  */
-response: HandshakeResponse, 
+image: string | null, };
+
 /**
- * The sender's SASL account, when it has one.
+ * Who we are on this connection.
  */
-account: string | null, } } | { "Reject": { 
+export type LocalUser = { 
 /**
- * An optional human-readable reason.
+ * Our current nick.
  */
-reason: string | null, } } | { "Ack": { 
+nick: string, 
 /**
- * The ratchet-encrypted empty payload.
+ * The account we authenticated as.
  */
-ct: RatchetMessage, } } | "Close" | { "Msg": { 
+account: string | null, 
 /**
- * The ratchet-encrypted payload.
+ * Our user modes.
  */
-ct: RatchetMessage, } } | { "Media": { 
+modes: string, 
 /**
- * The ratchet-encrypted payload, whose plaintext is a media descriptor.
+ * Metadata the server holds, such as `display-name`, `color`, `avatar` and `bot`.
+ *
+ * These are plain `draft/metadata-2` keys with no vendor prefix, despite everything else Obby
+ * adds being namespaced.
  */
-ct: RatchetMessage, } };
+metadata: { [key in string]?: string }, 
+/**
+ * Our away message, when we are away.
+ */
+away: string | null, };
+
+/**
+ * What one member holds in one channel.
+ *
+ * Only the channel-specific part. Who they are, what account they hold and whether they are away
+ * are the same everywhere, so they live once on [`Person`] rather than being copied into every
+ * channel they are in and drifting apart.
+ */
+export type Membership = { 
+/**
+ * The prefix characters they hold here, highest rank first.
+ */
+prefixes: string, };
+
+/**
+ * What kind of thing happened.
+ */
+export type MessageKind = { "type": "privmsg" } | { "type": "notice" } | { "type": "ctcp", 
+/**
+ * The CTCP command, uppercased, such as `ACTION`.
+ */
+command: string, } | { "type": "tagmsg" } | { "type": "join" } | { "type": "part" } | { "type": "quit" } | { "type": "kick", 
+/**
+ * Who was removed.
+ */
+target: string, } | { "type": "nick", 
+/**
+ * What they changed it to.
+ */
+new_nick: string, } | { "type": "topic" } | { "type": "mode" };
+
+/**
+ * The messages of one channel or conversation, ordered and bounded.
+ */
+export type MessageLog = { messages: Array<ChatMessage>, by_msgid: { [key in string]?: MessageOrder }, retention: number, };
+
+/**
+ * Where a message is ordered and how it is found again.
+ *
+ * Ordering is by the server's timestamp, with a monotonic sequence number breaking ties. A tie
+ * broken by arrival order alone is what the reference client relies on, and it only holds there
+ * because of an incidental property of the sort it uses.
+ */
+export type MessageOrder = { 
+/**
+ * Milliseconds since the epoch, from `server-time` when the server sent one.
+ */
+time_ms: number, 
+/**
+ * Assigned in arrival order, unique for the life of the connection.
+ */
+seq: number, };
+
+/**
+ * Where a message came from, as sent in the `:`-prefixed source.
+ *
+ * A server sends its own name; a client's message arrives as `nick!user@host`, though a server may
+ * send only the nick.
+ */
+export type MessageSource = { 
+/**
+ * The nick, or the server name when there is no `!` or `@`.
+ */
+name: string, 
+/**
+ * The user part, when the source is a full hostmask.
+ */
+user: string | null, 
+/**
+ * The host part, when present.
+ */
+host: string | null, };
+
+/**
+ * One message tag. A tag with an empty value is the same as a tag with no value, so both parse to
+ * `value: None`.
+ */
+export type MessageTag = { 
+/**
+ * The tag name, including a leading `+` on a client-only tag and any vendor prefix.
+ */
+key: string, 
+/**
+ * The unescaped value.
+ */
+value: string | null, };
+
+/**
+ * The tag section of a message, in the order it arrived.
+ *
+ * Order is kept rather than folded into a map because a round trip has to reproduce the line, and
+ * because a server may legally send the same key twice.
+ */
+export type MessageTags = Array<MessageTag>;
+
+/**
+ * Everything the connection knows.
+ */
+export type Model = { 
+/**
+ * Who we are.
+ */
+me: LocalUser, channels: { [key in CaseFolded]?: Channel }, conversations: { [key in CaseFolded]?: Conversation }, people: { [key in CaseFolded]?: Person }, retention: number, next_seq: number, };
+
+/**
+ * What changed, for a host that wants to react without diffing the whole model.
+ */
+export type ModelChange = { "type": "message", 
+/**
+ * The channel or nick it belongs to, as the server spells it.
+ */
+target: string, 
+/**
+ * Where it sits in that target's log.
+ */
+key: MessageOrder, } | { "type": "joined", 
+/**
+ * The channel.
+ */
+channel: string, } | { "type": "parted", 
+/**
+ * The channel.
+ */
+channel: string, } | { "type": "members_changed", 
+/**
+ * The channel.
+ */
+channel: string, } | { "type": "topic_changed", 
+/**
+ * The channel.
+ */
+channel: string, } | { "type": "nick_changed", 
+/**
+ * What they were called.
+ */
+from: string, 
+/**
+ * What they are called now.
+ */
+to: string, } | { "type": "modes_changed", 
+/**
+ * The channel.
+ */
+channel: string, } | { "type": "read_marker", 
+/**
+ * The channel or person.
+ */
+target: string, } | { "type": "reacted", 
+/**
+ * Where the message is.
+ */
+target: string, 
+/**
+ * The message reacted to.
+ */
+msgid: string, } | { "type": "redacted", 
+/**
+ * Where the message was.
+ */
+target: string, 
+/**
+ * The message deleted.
+ */
+msgid: string, } | { "type": "metadata", 
+/**
+ * Whose metadata changed.
+ */
+target: string, 
+/**
+ * The key that changed.
+ */
+key: string, };
 
 /**
  * Something the host needs to know about.
@@ -627,7 +704,7 @@ ct: RatchetMessage, } };
  * a callback needs a different lifetime, threading and re-entrancy contract in every language this
  * engine is bound into.
  */
-export type Event = { "type": "cap_acknowledged", 
+export type ObbyEvent = { "type": "cap_acknowledged", 
 /**
  * The capability names, as acknowledged.
  */
@@ -663,11 +740,11 @@ trying: string, } | { "type": "changed",
 /**
  * What changed.
  */
-change: Change, } | { "type": "link_dead" } | { "type": "reconnect", 
+change: ModelChange, } | { "type": "link_dead" } | { "type": "reconnect", 
 /**
  * How long the host should wait first.
  */
-after_ms: bigint, } | { "type": "reconnect_gave_up" } | { "type": "command_timed_out", 
+after_ms: number, } | { "type": "reconnect_gave_up" } | { "type": "command_timed_out", 
 /**
  * The command that went unanswered.
  */
@@ -726,221 +803,9 @@ text: string, } | { "type": "raw",
 message: RawMessage, };
 
 /**
- * A peer's identity fingerprint: the first 16 bytes of `SHA-256(signing_public_key)`.
- *
- * Derived from the signing key, never the agreement key, so the key whose signature is
- * verified on every handshake is provably the same key a safety number displays.
- */
-export type Fingerprint = [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
-
-/**
- * The responder's answer, decoded from the wire's base64 JSON blob that `accept` carries as
- * `response`.
- */
-export type HandshakeResponse = { 
-/**
- * The responder's identity agreement key.
- */
-ik: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], 
-/**
- * The responder's identity signing key.
- */
-sik: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], 
-/**
- * A freshly generated ephemeral key, doubling as the responder's first ratchet keypair.
- */
-ek: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], 
-/**
- * `Ed25519(ik ‖ ek)`, signed with `sik`.
- */
-sig: Array<number>, 
-/**
- * The first ratchet message, carrying empty plaintext, proving the responder derived the
- * same X3DH secret the initiator will.
- */
-boot: RatchetMessage, };
-
-/**
- * The public half of an [`Identity`]: an X25519 agreement key (`ik`) and an Ed25519 signing
- * key (`sik`), exactly as they travel inside [`PreKeyBundle`] and [`HandshakeResponse`].
- */
-export type IdentityPublic = { 
-/**
- * The X25519 identity agreement key, `ik`.
- */
-agreement: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], 
-/**
- * The Ed25519 signing key, `sik`. Every signature in this protocol verifies against this
- * key, and [`Fingerprint`] is derived from it, never from `agreement`.
- */
-signing: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], };
-
-/**
- * An invitation link to the network or to one channel.
- */
-export type Invitation = { 
-/**
- * The identifier used to delete it.
- */
-share_id: string, 
-/**
- * The channel it joins, or nothing when it invites to the network.
- */
-channel: string | null, 
-/**
- * The link itself.
- */
-url: string, 
-/**
- * When it was made, as the server spells it.
- */
-created: string | null, 
-/**
- * How many people have used it.
- */
-redeemed: number, 
-/**
- * What it is for.
- */
-description: string | null, };
-
-/**
- * A preview of a link someone posted, built by the server and attached to the message.
- *
- * The server fetches the page; a client never does. There is no capability to negotiate, and the
- * server refuses these tags from any sender but itself, so a peer cannot forge one.
- */
-export type LinkPreview = { 
-/**
- * The page title. Always present when a preview exists at all.
- */
-title: string, 
-/**
- * A description of the page, when the page offered one.
- */
-snippet: string | null, 
-/**
- * An image, already re-hosted by the server when it has a filehost configured.
- */
-image: string | null, };
-
-/**
- * Who we are on this connection.
- */
-export type Me = { 
-/**
- * Our current nick.
- */
-nick: string, 
-/**
- * The account we authenticated as.
- */
-account: string | null, 
-/**
- * Our user modes.
- */
-modes: string, 
-/**
- * Metadata the server holds, such as `display-name`, `color`, `avatar` and `bot`.
- *
- * These are plain `draft/metadata-2` keys with no vendor prefix, despite everything else Obby
- * adds being namespaced.
- */
-metadata: { [key in string]?: string }, 
-/**
- * Our away message, when we are away.
- */
-away: string | null, };
-
-/**
- * What one member holds in one channel.
- *
- * Only the channel-specific part. Who they are, what account they hold and whether they are away
- * are the same everywhere, so they live once on [`Person`] rather than being copied into every
- * channel they are in and drifting apart.
- */
-export type Membership = { 
-/**
- * The prefix characters they hold here, highest rank first.
- */
-prefixes: string, };
-
-/**
- * What kind of thing happened.
- */
-export type MessageKind = "privmsg" | "notice" | { "ctcp": { 
-/**
- * The CTCP command, uppercased, such as `ACTION`.
- */
-command: string, } } | "tagmsg" | "join" | "part" | "quit" | { "kick": { 
-/**
- * Who was removed.
- */
-target: string, } } | { "nick": { 
-/**
- * What they changed it to.
- */
-new_nick: string, } } | "topic" | "mode";
-
-/**
- * The messages of one channel or conversation, ordered and bounded.
- */
-export type MessageLog = { messages: Array<ChatMessage>, by_msgid: { [key in string]?: MessageOrder }, retention: number, };
-
-/**
- * Where a message is ordered and how it is found again.
- *
- * Ordering is by the server's timestamp, with a monotonic sequence number breaking ties. A tie
- * broken by arrival order alone is what the reference client relies on, and it only holds there
- * because of an incidental property of the sort it uses.
- */
-export type MessageOrder = { 
-/**
- * Milliseconds since the epoch, from `server-time` when the server sent one.
- */
-time_ms: bigint, 
-/**
- * Assigned in arrival order, unique for the life of the connection.
- */
-seq: bigint, };
-
-/**
- * Everything the connection knows.
- */
-export type Model = { 
-/**
- * Who we are.
- */
-me: Me, channels: { [key in CaseFolded]?: Channel }, queries: { [key in CaseFolded]?: Conversation }, people: { [key in CaseFolded]?: Person }, retention: number, next_seq: bigint, };
-
-/**
- * Who we are watching, and whether each is online.
- */
-export type Monitor = { watching: Array<CaseFolded>, online: Array<CaseFolded>, };
-
-/**
- * A moment in time, as the host's two clocks see it.
- *
- * Monotonic time drives every deadline, because it only ever moves forward; wall clock can jump
- * when a user resets their system clock or NTP steps it. Wall clock exists only to stamp a message
- * the server did not stamp itself with `server-time`, so this module never reads `unix_ms` at all.
- */
-export type Now = { 
-/**
- * Milliseconds on a clock that never goes backward.
- */
-monotonic_ms: bigint, 
-/**
- * Milliseconds since the Unix epoch.
- */
-unix_ms: bigint, };
-
-/**
  * The two states an intent frame like `mic` or `hand` toggles between.
  */
-export type OnOff = "On" | "Off";
-
-export type PartialSdp = { total: number, parts: { [key in number]?: string }, };
+export type OnOff = "on" | "off";
 
 /**
  * Someone we know about, held once however many channels we share.
@@ -987,59 +852,6 @@ operator: boolean,
 metadata: { [key in string]?: string }, };
 
 /**
- * How far the connection has got.
- */
-export type Phase = "Disconnected" | "Negotiating" | "Registering" | "Registered";
-
-/**
- * A responder-published prekey bundle, decoded from the wire's base64 JSON blob that `init`
- * carries as `bundle`. Field names match the wire exactly.
- */
-export type PreKeyBundle = { 
-/**
- * The sender's identity agreement key.
- */
-ik: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], 
-/**
- * The sender's identity signing key.
- */
-sik: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], 
-/**
- * A freshly generated signed-prekey.
- */
-spk: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], 
-/**
- * `Ed25519(ik ‖ spk ‖ opk)`, signed with `sik`.
- */
-sig: Array<number>, 
-/**
- * A freshly generated one-time prekey.
- */
-opk: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], };
-
-/**
- * One Double Ratchet message: a header carried as authenticated associated data, and an AEAD
- * ciphertext.
- */
-export type RatchetMessage = { 
-/**
- * The sender's current ratchet public key.
- */
-dh: [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number], 
-/**
- * The length of the sender's previous sending chain.
- */
-pn: number, 
-/**
- * This message's counter within the sender's current chain.
- */
-n: number, 
-/**
- * The AEAD ciphertext.
- */
-ct: Array<number>, };
-
-/**
  * A parsed protocol line.
  *
  * The types are owned rather than borrowed from the input. A borrowed `Message<'a>` would parse
@@ -1050,11 +862,11 @@ export type RawMessage = {
 /**
  * The tag section, empty when the line carried no `@`.
  */
-tags: Tags, 
+tags: MessageTags, 
 /**
  * The source, when the line carried one.
  */
-source: Source | null, 
+source: MessageSource | null, 
 /**
  * The command or three-digit numeric, as it arrived. Commands are case-insensitive on the wire,
  * so compare with [`Message::is`] rather than `==`.
@@ -1066,79 +878,40 @@ command: string,
 params: Array<string>, };
 
 /**
+ * What to authenticate with.
+ */
+export type SaslCredentials = { "Plain": { 
+/**
+ * The account to log in as.
+ */
+username: string, 
+/**
+ * Its password.
+ */
+password: string, } } | "External" | { "Scram": { 
+/**
+ * The account to log in as.
+ */
+username: string, 
+/**
+ * Its password.
+ */
+password: string, 
+/**
+ * Unpredictable bytes, never reused. The core has no entropy source, so the host supplies
+ * this, and reusing one destroys the replay protection the mechanism exists for.
+ */
+nonce: string, } };
+
+/**
  * Why authentication ended without succeeding.
  */
-export type SaslFailure = "Rejected" | "TooLong" | "Aborted" | "AlreadyAuthenticated" | "NoSharedMechanism" | "ServerNotVerified";
-
-/**
- * Why an exchange could not continue.
- */
-export type ScramError = "Malformed" | "NonceMismatch" | "TooManyIterations" | "BadSalt" | "ServerProofInvalid";
-
-/**
- * One numbered slice of a split `offer`/`answer` frame.
- */
-export type SdpChunk = { 
-/**
- * This slice's correlation fields.
- */
-chunk: ChunkMeta, 
-/**
- * The slice of the sdp this chunk carries.
- */
-sdp: string, };
-
-/**
- * A bounded buffer that reassembles `offer`/`answer` frames split across chunks.
- */
-export type SdpReassembler = { partials: { [key in string]?: PartialSdp }, max_chunks: number, max_concurrent: number, };
+export type SaslFailure = "rejected" | "too_long" | "aborted" | "already_authenticated" | "no_shared_mechanism" | "server_not_verified";
 
 /**
  * How serious a `standard-replies` message is.
  */
 export type Severity = "fail" | "warn" | "note";
-
-/**
- * Where a message came from, as sent in the `:`-prefixed source.
- *
- * A server sends its own name; a client's message arrives as `nick!user@host`, though a server may
- * send only the nick.
- */
-export type Source = { 
-/**
- * The nick, or the server name when there is no `!` or `@`.
- */
-name: string, 
-/**
- * The user part, when the source is a full hostmask.
- */
-user: string | null, 
-/**
- * The host part, when present.
- */
-host: string | null, };
-
-/**
- * One message tag. A tag with an empty value is the same as a tag with no value, so both parse to
- * `value: None`.
- */
-export type Tag = { 
-/**
- * The tag name, including a leading `+` on a client-only tag and any vendor prefix.
- */
-key: string, 
-/**
- * The unescaped value.
- */
-value: string | null, };
-
-/**
- * The tag section of a message, in the order it arrived.
- *
- * Order is kept rather than folded into a map because a round trip has to reproduce the line, and
- * because a server may legally send the same key twice.
- */
-export type Tags = Array<Tag>;
 
 /**
  * TURN/STUN credentials the SFU hands us on `joined`.
@@ -1166,7 +939,7 @@ password: string, };
 /**
  * Whether we are still composing a message.
  */
-export type Typing = "active" | "paused" | "done";
+export type TypingState = "active" | "paused" | "done";
 
 /**
  * One participant's state within a [`Room`].
@@ -1219,12 +992,12 @@ hand: OnOff, };
  * (`On`/`Off`, read together with [`Signal::Presence`]'s `kind`), or an activity flag
  * (`Speaking`/`Silent`/`DeafOn`/`DeafOff`, which carries no `kind` at all).
  */
-export type VoicePresence = "Joined" | "Left" | "On" | "Off" | "Speaking" | "Silent" | "DeafOn" | "DeafOff";
+export type VoicePresence = "joined" | "left" | "on" | "off" | "speaking" | "silent" | "deaf_on" | "deaf_off";
 
 /**
  * Whether a room participant may publish audio and video, or only receive it.
  */
-export type VoiceRole = "Publisher" | "Viewer";
+export type VoiceRole = "publisher" | "viewer";
 
 /**
  * The state of one voice room: who is in it, their kind of channel, and every participant's
@@ -1251,7 +1024,7 @@ turn: TurnCredentials | null, };
 /**
  * Who may publish in a voice room, decided by the channel's sigil.
  */
-export type VoiceRoomKind = "Publish" | "Stream";
+export type VoiceRoomKind = "publish" | "stream";
 
 /**
  * One `+obsidianirc/rtc` signalling frame.
@@ -1263,15 +1036,15 @@ export type VoiceRoomKind = "Publish" | "Stream";
  * versus the `presence` they get rebroadcast as; `promote`/`demote` versus `role`), rather than
  * collapsed into one type as the published table's prose implies.
  */
-export type VoiceSignal = { "type": "Join", 
+export type VoiceSignal = { "type": "join", 
 /**
  * The channel to join.
  */
-channel: string, } | { "type": "Leave", 
+channel: string, } | { "type": "leave", 
 /**
  * The channel to leave.
  */
-channel: string, } | { "type": "Joined", 
+channel: string, } | { "type": "joined", 
 /**
  * Every current member's nick.
  */
@@ -1295,7 +1068,7 @@ turn: TurnCredentials | null,
 /**
  * Hints mapping media lines to the members they belong to.
  */
-tracks: Array<VoiceTrackHint> | null, } | { "type": "Offer", 
+tracks: Array<VoiceTrackHint> | null, } | { "type": "offer", 
 /**
  * The offer SDP, or one slice of it when `chunk` is set.
  */
@@ -1307,7 +1080,7 @@ tracks: Array<VoiceTrackHint> | null,
 /**
  * Set when this frame is one of several chunks sharing an id.
  */
-chunk: ChunkMeta | null, } | { "type": "Answer", 
+chunk: ChunkMeta | null, } | { "type": "answer", 
 /**
  * The answer SDP, or one slice of it when `chunk` is set.
  */
@@ -1315,7 +1088,7 @@ sdp: string,
 /**
  * Set when this frame is one of several chunks sharing an id.
  */
-chunk: ChunkMeta | null, } | { "type": "Ice", 
+chunk: ChunkMeta | null, } | { "type": "ice", 
 /**
  * The candidate string.
  */
@@ -1327,7 +1100,7 @@ mid: string | null,
 /**
  * The media line's index, when `mid` is absent.
  */
-mlineidx: number | null, } | { "type": "Presence", 
+mlineidx: number | null, } | { "type": "presence", 
 /**
  * Who this is about.
  */
@@ -1343,27 +1116,27 @@ kind: VoiceToggle | null,
 /**
  * The role granted, when `state` is [`PresenceState::Joined`] in a `$` room.
  */
-role: VoiceRole | null, } | { "type": "Mic", 
+role: VoiceRole | null, } | { "type": "mic", 
 /**
  * The new state.
  */
-state: OnOff, } | { "type": "Video", 
+state: OnOff, } | { "type": "video", 
 /**
  * The new state.
  */
-state: OnOff, } | { "type": "Screen", 
+state: OnOff, } | { "type": "screen", 
 /**
  * The new state.
  */
-state: OnOff, } | { "type": "Hand", 
+state: OnOff, } | { "type": "hand", 
 /**
  * The new state.
  */
-state: OnOff, } | { "type": "Deaf", 
+state: OnOff, } | { "type": "deaf", 
 /**
  * The new state.
  */
-state: OnOff, } | { "type": "Speaking" } | { "type": "Silent" } | { "type": "React", 
+state: OnOff, } | { "type": "speaking" } | { "type": "silent" } | { "type": "react", 
 /**
  * Who reacted, present only on the inbound broadcast.
  */
@@ -1371,15 +1144,15 @@ member: string | null,
 /**
  * The emoji.
  */
-emoji: string, } | { "type": "Promote", 
+emoji: string, } | { "type": "promote", 
 /**
  * The member to promote.
  */
-target: string, } | { "type": "Demote", 
+target: string, } | { "type": "demote", 
 /**
  * The member to demote.
  */
-target: string, } | { "type": "Role", 
+target: string, } | { "type": "role", 
 /**
  * Whose role changed.
  */
@@ -1387,7 +1160,7 @@ member: string,
 /**
  * Their new role.
  */
-role: VoiceRole, } | { "type": "Error", 
+role: VoiceRole, } | { "type": "error", 
 /**
  * A human-readable reason, when the server gave one.
  */
@@ -1396,7 +1169,7 @@ error: string | null, };
 /**
  * Which per-participant toggle a `presence` notification reports, for its toggle sub-shape.
  */
-export type VoiceToggle = "Mic" | "Video" | "Screen" | "Hand";
+export type VoiceToggle = "mic" | "video" | "screen" | "hand";
 
 /**
  * A hint from the SFU mapping one negotiated media line to the member it belongs to.
@@ -1414,3 +1187,8 @@ mid: string,
  * The member that media line belongs to.
  */
 member: string, };
+
+/**
+ * Who we are watching, and whether each is online.
+ */
+export type WatchList = { watching: Array<CaseFolded>, online: Array<CaseFolded>, };

@@ -387,6 +387,7 @@ fn field_u32(value: &Json, key: &str) -> Option<u32> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 pub enum OnOff {
     /// The feature is enabled.
     On,
@@ -415,6 +416,7 @@ impl OnOff {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[cfg_attr(feature = "ts", ts(rename = "VoiceRole"))]
 pub enum Role {
     /// May publish: everyone in a `^` room, and the streamer plus their promotions in a `$` room.
@@ -444,6 +446,7 @@ impl Role {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[cfg_attr(feature = "ts", ts(rename = "VoiceRoomKind"))]
 pub enum RoomKind {
     /// A `^` channel: every member publishes their own microphone for free.
@@ -482,6 +485,7 @@ impl RoomKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[cfg_attr(feature = "ts", ts(rename = "VoiceToggle"))]
 pub enum ToggleKind {
     /// Microphone.
@@ -532,6 +536,7 @@ impl ToggleKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
 #[cfg_attr(feature = "ts", ts(rename = "VoicePresence"))]
 pub enum PresenceState {
     /// `member` joined the room. Carries a `role` only in a `$` room.
@@ -660,9 +665,9 @@ impl TurnCredentials {
 }
 
 /// The chunk-correlation fields riding alongside a split `sdp` value.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct ChunkMeta {
     /// The id every chunk of one split frame shares.
     pub id: String,
@@ -704,7 +709,7 @@ fn chunk_meta_fields(chunk: &ChunkMeta) -> Vec<(String, Json)> {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 #[cfg_attr(feature = "ts", ts(rename = "VoiceSignal"))]
-#[cfg_attr(feature = "serde", serde(tag = "type"))]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Signal {
     /// Ask to join a voice room. Client to server.
@@ -1180,7 +1185,6 @@ pub const DEFAULT_CHUNK_BUDGET: usize = 8191;
 /// One numbered slice of a split `offer`/`answer` frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct SdpChunk {
     /// This slice's correlation fields.
     pub chunk: ChunkMeta,
@@ -1253,7 +1257,6 @@ pub const DEFAULT_MAX_CONCURRENT_REASSEMBLIES: usize = 16;
 
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 struct PartialSdp {
     total: u32,
     parts: BTreeMap<u32, String>,
@@ -1262,7 +1265,6 @@ struct PartialSdp {
 /// A bounded buffer that reassembles `offer`/`answer` frames split across chunks.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct SdpReassembler {
     partials: BTreeMap<String, PartialSdp>,
     max_chunks: usize,

@@ -21,6 +21,8 @@ use crate::timer::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+#[cfg_attr(feature = "ts", ts(rename = "ConnectionPhase"))]
 pub enum Phase {
     /// No transport yet. Nothing has been written.
     Disconnected,
@@ -44,19 +46,25 @@ pub struct Config {
     /// The nick to register with.
     pub nick: String,
     /// The username sent in `USER`. Defaults to the nick.
+    #[cfg_attr(feature = "ts", ts(as = "Option<String>", optional))]
     pub username: String,
     /// The realname sent in `USER`. Defaults to the nick.
+    #[cfg_attr(feature = "ts", ts(as = "Option<String>", optional))]
     pub realname: String,
     /// The server password, sent as `PASS` before anything else.
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub password: Option<String>,
     /// What to authenticate with, when the server offers `sasl`.
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub sasl: Option<Credentials>,
     /// How many messages each channel and conversation keeps.
+    #[cfg_attr(feature = "ts", ts(as = "Option<usize>", optional))]
     pub retention: usize,
     /// Nicks to fall back through when the server says ours is taken during registration.
     ///
     /// Registration stalls forever if nobody answers a 433, so the engine walks this list and then
     /// starts appending underscores rather than leaving the connection hung.
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<String>>", optional))]
     pub alt_nicks: Vec<String>,
 }
 
@@ -90,6 +98,7 @@ impl Config {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "ObbyEvent"))]
 #[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Event {
@@ -138,6 +147,7 @@ pub enum Event {
     /// Time to open a new connection. The host dials and calls [`Client::connected`].
     Reconnect {
         /// How long the host should wait first.
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
         after_ms: u64,
     },
     /// Reconnecting has been given up on after too many attempts.
@@ -1985,7 +1995,7 @@ mod hostile_input_tests {
         );
         let folded = client.isupport().fold("bob");
         assert_eq!(
-            client.model().query(&folded).map(|q| q.log.len()),
+            client.model().conversation(&folded).map(|q| q.log.len()),
             Some(1),
             "an unusable timestamp falls back to our own, it does not panic or lose the message"
         );
@@ -2021,7 +2031,7 @@ mod hostile_input_tests {
         assert!(
             client
                 .model()
-                .query(&client.isupport().fold("bob"))
+                .conversation(&client.isupport().fold("bob"))
                 .is_none(),
             "it must not become a private conversation"
         );
@@ -2450,7 +2460,7 @@ mod typing_tests {
         assert_eq!(
             client
                 .model()
-                .query(&client.isupport().fold("bob"))
+                .conversation(&client.isupport().fold("bob"))
                 .map(|q| q.typing.len()),
             Some(1),
             "a conversation named after ourselves would be nobody"

@@ -91,6 +91,7 @@ pub struct Capability {
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "Capabilities"))]
 pub struct Caps {
     available: BTreeMap<String, Option<String>>,
     acknowledged: BTreeMap<String, Option<String>>,

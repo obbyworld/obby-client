@@ -25,7 +25,7 @@ socket.listen((data) {
   }
 });
 
-client.command({'command': 'join', 'channel': '#obby', 'key': null});
+client.command({'type': 'join', 'channel': '#obby', 'key': null});
 client.close();
 ```
 

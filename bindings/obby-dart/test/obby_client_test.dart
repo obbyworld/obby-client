@@ -56,10 +56,10 @@ void main() {
     addTearDown(client.close);
     while (client.pollTransmit() != null) {}
 
-    expect(client.command({'command': 'nick', 'nick': 'other'}), isTrue);
+    expect(client.command({'type': 'nick', 'nick': 'other'}), isTrue);
     expect(utf8.decode(client.pollTransmit()!), 'NICK other\r\n');
     expect(
-      client.command({'command': 'not_a_real_command'}),
+      client.command({'type': 'not_a_real_command'}),
       isFalse,
       reason: 'an unreadable command must be reported, not silently dropped',
     );

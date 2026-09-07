@@ -11,6 +11,7 @@ use core::fmt::Write as _;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "MessageTag"))]
 pub struct Tag {
     /// The tag name, including a leading `+` on a client-only tag and any vendor prefix.
     pub key: String,
@@ -48,6 +49,7 @@ impl Tag {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "MessageTags"))]
 pub struct Tags(Vec<Tag>);
 
 impl Tags {

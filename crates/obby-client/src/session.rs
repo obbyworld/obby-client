@@ -14,6 +14,7 @@ use crate::model::{Message, MessageKind, Model};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "ModelChange"))]
 #[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Change {
@@ -286,7 +287,7 @@ fn message(ctx: &mut Context<'_>, line: &Line, command: &str) -> Vec<Change> {
         }
         accepted
     } else {
-        let query = ctx.model.query_mut(folded, &name);
+        let query = ctx.model.conversation_mut(folded, &name);
         let accepted = query.log.insert(message);
         if accepted && counts {
             // a private message is addressed to us by existing at all
@@ -495,7 +496,7 @@ fn reaction(ctx: &mut Context<'_>, line: &Line) -> Option<Vec<Change>> {
 
     let log = match ctx.model.existing_channel_mut(&folded) {
         Some(channel) => &mut channel.log,
-        None => &mut ctx.model.existing_query_mut(&folded)?.log,
+        None => &mut ctx.model.existing_conversation_mut(&folded)?.log,
     };
     let message = log.get_mut(&msgid)?;
     let reactors = message.reactions.entry(emoji.clone()).or_default();
@@ -533,7 +534,7 @@ fn link_preview(ctx: &mut Context<'_>, line: &Line) -> Option<Vec<Change>> {
             Some(channel) => Some(&mut channel.log),
             None => ctx
                 .model
-                .existing_query_mut(&folded)
+                .existing_conversation_mut(&folded)
                 .map(|query| &mut query.log),
         };
         if let Some(log) = log
@@ -561,7 +562,10 @@ fn redact(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
 
     let Some(log) = (match ctx.model.existing_channel_mut(&folded) {
         Some(channel) => Some(&mut channel.log),
-        None => ctx.model.existing_query_mut(&folded).map(|q| &mut q.log),
+        None => ctx
+            .model
+            .existing_conversation_mut(&folded)
+            .map(|q| &mut q.log),
     }) else {
         return Vec::new();
     };
@@ -679,7 +683,7 @@ fn mark_read(ctx: &mut Context<'_>, line: &Line) -> Vec<Change> {
         channel.mentions = 0;
         return alloc::vec![Change::ReadMarker { target: name }];
     }
-    if let Some(query) = ctx.model.existing_query_mut(&folded) {
+    if let Some(query) = ctx.model.existing_conversation_mut(&folded) {
         query.read_marker = Some(marker);
         query.unread = 0;
         return alloc::vec![Change::ReadMarker { target: name }];
@@ -1015,9 +1019,9 @@ mod tests {
                 .expect("we should know this person")
         }
 
-        fn query(&self, nick: &str) -> &crate::model::Query {
+        fn conversation(&self, nick: &str) -> &crate::model::Conversation {
             self.model
-                .query(&self.isupport.fold(nick))
+                .conversation(&self.isupport.fold(nick))
                 .expect("the conversation should exist")
         }
     }
@@ -1050,9 +1054,9 @@ mod tests {
     fn a_private_message_is_filed_under_the_sender_not_under_us() {
         let mut h = Harness::new();
         h.feed(":bob!u@h PRIVMSG me :psst");
-        assert_eq!(h.query("bob").log.len(), 1);
+        assert_eq!(h.conversation("bob").log.len(), 1);
         assert!(
-            h.model.query(&h.isupport.fold("me")).is_none(),
+            h.model.conversation(&h.isupport.fold("me")).is_none(),
             "a conversation named after ourselves would be nobody"
         );
     }
@@ -1061,7 +1065,7 @@ mod tests {
     fn our_own_private_message_is_filed_under_who_we_sent_it_to() {
         let mut h = Harness::new();
         h.feed(":me!u@h PRIVMSG bob :hi there");
-        let message = h.query("bob").log.last().expect("a message");
+        let message = h.conversation("bob").log.last().expect("a message");
         assert!(message.own);
         assert_eq!(message.text, "hi there");
     }
@@ -1372,7 +1376,7 @@ mod tests {
     fn every_private_message_is_addressed_to_us_by_existing() {
         let mut h = Harness::new();
         h.feed(":bob!u@h PRIVMSG me :no nick needed");
-        assert_eq!(h.query("bob").unread, 1);
+        assert_eq!(h.conversation("bob").unread, 1);
     }
 
     #[test]

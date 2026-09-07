@@ -13,6 +13,7 @@ use obby_proto::CaseFolded;
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "WatchList"))]
 pub struct Monitor {
     watching: BTreeSet<CaseFolded>,
     online: BTreeSet<CaseFolded>,

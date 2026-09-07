@@ -215,6 +215,7 @@ pub const PRIVILEGED_COMMANDS: &[&str] = &[
 #[derive(Debug, Clone, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "BotRegistry"))]
 pub struct Bots {
     known: BTreeMap<String, Bot>,
 }

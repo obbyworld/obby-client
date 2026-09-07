@@ -22,6 +22,7 @@ pub enum ParseError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "MessageSource"))]
 pub struct Source {
     /// The nick, or the server name when there is no `!` or `@`.
     pub name: String,

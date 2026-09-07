@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn command_from_json_parses_a_join() {
-        let command = command_from_json(r##"{"command":"join","channel":"#obby","key":null}"##)
+        let command = command_from_json(r##"{"type":"join","channel":"#obby","key":null}"##)
             .expect("a well-formed command parses");
         assert_eq!(
             command,
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn command_from_json_treats_a_missing_optional_field_as_none() {
-        let command = command_from_json(r#"{"command":"quit"}"#)
+        let command = command_from_json(r#"{"type":"quit"}"#)
             .expect("an omitted optional field defaults to None");
         assert_eq!(command, Command::Quit { reason: None });
     }

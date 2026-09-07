@@ -20,7 +20,7 @@ client.handle_bytes(sock.recv(4096))
 for event in client.poll_events():
     print(event)
 
-client.command({"command": "join", "channel": "#obby", "key": None})
+client.command({"type": "join", "channel": "#obby", "key": None})
 client.tick(monotonic_ms, unix_ms)
 ```
 

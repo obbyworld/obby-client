@@ -9,6 +9,7 @@ use alloc::string::String;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
+#[cfg_attr(feature = "ts", ts(rename = "TypingState"))]
 #[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
 pub enum Typing {
     /// Typing right now.
@@ -33,7 +34,7 @@ impl Typing {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
-#[cfg_attr(feature = "serde", serde(tag = "command", rename_all = "snake_case"))]
+#[cfg_attr(feature = "serde", serde(tag = "type", rename_all = "snake_case"))]
 #[non_exhaustive]
 pub enum Command {
     /// Join a channel.

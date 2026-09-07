@@ -1013,7 +1013,7 @@ mod tests {
             "registration must reach the host as an event: {seen}"
         );
 
-        let join = CString::new(r##"{"command":"join","channel":"#test","key":null}"##).unwrap();
+        let join = CString::new(r##"{"type":"join","channel":"#test","key":null}"##).unwrap();
         assert!(unsafe { obby_client_command_from_json(client, join.as_ptr()) });
         assert_eq!(drain(client), "JOIN #test\r\n");
 
@@ -1062,7 +1062,7 @@ mod tests {
                 "false is paired with a defined value, never garbage"
             );
 
-            let ok = CString::new(r#"{"command":"quit","reason":null}"#).unwrap();
+            let ok = CString::new(r#"{"type":"quit","reason":null}"#).unwrap();
             assert!(!obby_client_command_from_json(ptr::null_mut(), ok.as_ptr()));
 
             assert!(obby_client_model_json(ptr::null_mut()).is_null());
@@ -1192,7 +1192,7 @@ mod tests {
         let client = unsafe { obby_client_new_from_json(config_json("badjson").as_ptr()) };
         assert!(!unsafe { obby_client_command_from_json(client, not_json.as_ptr()) });
 
-        let unknown_command = CString::new(r#"{"command":"not-a-real-command"}"#).unwrap();
+        let unknown_command = CString::new(r#"{"type":"not-a-real-command"}"#).unwrap();
         assert!(!unsafe { obby_client_command_from_json(client, unknown_command.as_ptr()) });
 
         unsafe { obby_client_free(client) };

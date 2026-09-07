@@ -64,8 +64,6 @@ const NONCE_INFO: &[u8] = b"obby.world/e2ee nonce";
 /// a caller asking the state machine for a transition it does not allow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
-#[cfg_attr(feature = "ts", ts(rename = "E2eeError"))]
 pub enum Error {
     /// A signature the protocol requires did not verify.
     InvalidSignature,
@@ -162,7 +160,6 @@ fn diffie_hellman_raw(secret: &[u8; 32], public: &[u8; 32]) -> Result<[u8; 32], 
 /// key (`sik`), exactly as they travel inside [`PreKeyBundle`] and [`HandshakeResponse`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct IdentityPublic {
     /// The X25519 identity agreement key, `ik`.
     pub agreement: [u8; 32],
@@ -229,7 +226,6 @@ impl Identity {
 /// verified on every handshake is provably the same key a safety number displays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Fingerprint([u8; 16]);
 
 impl Fingerprint {
@@ -345,7 +341,6 @@ pub fn keeps_own_offer(own: Fingerprint, peer: Option<Fingerprint>) -> bool {
 /// carries as `bundle`. Field names match the wire exactly.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct PreKeyBundle {
     /// The sender's identity agreement key.
     pub ik: [u8; 32],
@@ -363,7 +358,6 @@ pub struct PreKeyBundle {
 /// `response`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct HandshakeResponse {
     /// The responder's identity agreement key.
     pub ik: [u8; 32],
@@ -382,7 +376,6 @@ pub struct HandshakeResponse {
 /// ciphertext.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct RatchetMessage {
     /// The sender's current ratchet public key.
     pub dh: [u8; 32],
@@ -401,8 +394,6 @@ pub struct RatchetMessage {
 /// lines and belongs to the transport that reassembles it, not to session logic. See [`Frag`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
-#[cfg_attr(feature = "ts", ts(rename = "E2eeFrame"))]
 pub enum Frame {
     /// An offer to start an encrypted session.
     Init {
@@ -446,8 +437,6 @@ pub enum Frame {
 /// line, on either carrier. The working client sends this, and no spec text describes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
-#[cfg_attr(feature = "ts", ts(rename = "E2eeFragment"))]
 pub struct Frag {
     /// The id every fragment of one split frame shares.
     pub id: String,

@@ -95,9 +95,10 @@ c-smoke: ## compile and run the C program that drives the whole ABI
 	  $(FFI_SYSTEM_LIBS) -o target/obby-c-smoke
 	./target/obby-c-smoke
 
-ts-check: ## typecheck a consumer against the generated definitions
+ts-check: ## typecheck a consumer, then run one against the built module
 	npx --yes -p typescript@5 tsc --strict --noEmit --target es2022 --lib esnext,dom \
 	  --module es2022 --moduleResolution bundler bindings/obby-wasm/tests/typecheck.ts
+	node bindings/obby-wasm/tests/runtime.mjs
 
 site: ## build the documentation site into target/site
 	scripts/build-docs.sh

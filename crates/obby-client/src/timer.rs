@@ -14,7 +14,6 @@ use alloc::vec::Vec;
 /// the server did not stamp itself with `server-time`, so this module never reads `unix_ms` at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub struct Now {
     /// Milliseconds on a clock that never goes backward.
     pub monotonic_ms: u64,
@@ -37,7 +36,6 @@ pub(crate) const TYPING_EXPIRY_MS: u64 = 6_000;
 /// One named deadline a host can arm and later collect once it falls due.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "obby.ts"))]
 pub(crate) enum Deadline {
     /// Time to send the next `PING` to prove the link is still alive.
     PingKeepalive,
