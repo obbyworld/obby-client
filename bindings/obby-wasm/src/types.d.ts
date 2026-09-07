@@ -330,7 +330,7 @@ target: string,
  * The last message read, in milliseconds since the Unix epoch. The engine writes the
  * `server-time` the wire wants.
  */
-at_ms: bigint, } | { "type": "fetch_history", 
+at_ms: number, } | { "type": "fetch_history", 
 /**
  * The channel or person.
  */
