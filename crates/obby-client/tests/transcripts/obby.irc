@@ -41,4 +41,4 @@
 # The channel keeps everyone and everything it holds across a rename.
 < :irc.example.org RENAME #obby #obby-world :tidying up
 < :me!u@host JOIN ^general
-< @+obsidianirc/rtc={"type":"join","channel":"^general"} :alice!u@host TAGMSG ^general
+< @obsidianirc/rtc={"type":"join","channel":"^general"} :alice!u@host TAGMSG ^general

@@ -1,6 +1,6 @@
-//! Voice signalling: the `+obsidianirc/rtc` frame types and room state.
+//! Voice signalling: the `obsidianirc/rtc` frame types and room state.
 //!
-//! This is the signalling and room-state plane only: parsing and building `+obsidianirc/rtc`
+//! This is the signalling and room-state plane only: parsing and building `obsidianirc/rtc`
 //! frames, splitting and
 //! reassembling an oversized `offer`/`answer`, and tracking who is in a room and what they are
 //! doing. `RTCPeerConnection`, codecs and `getUserMedia` never appear here; an `sdp` value is an
@@ -26,6 +26,10 @@ use core::fmt::Write as _;
 use obby_proto::{CaseFolded, Casemapping};
 
 use crate::json::{Json, field_string};
+
+/// The tag a frame rides on. It is a server tag, so only the server can attach one: we send ours on
+/// a TAGMSG to the room, and every frame we read was vetted by the server.
+pub(crate) const RTC_TAG: &str = "obsidianirc/rtc";
 
 // ---------------------------------------------------------------------------------------------
 // Writing the JSON shapes this module puts on the wire. Reading them is `crate::json`.
@@ -446,10 +450,10 @@ fn chunk_meta_fields(chunk: &ChunkMeta) -> Vec<(String, Json)> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Signal: every `+obsidianirc/rtc` frame type.
+// Signal: every `obsidianirc/rtc` frame type.
 // ---------------------------------------------------------------------------------------------
 
-/// One `+obsidianirc/rtc` signalling frame.
+/// One `obsidianirc/rtc` signalling frame.
 ///
 /// Every variant is one JSON object's `type`. The published
 /// <https://github.com/obbyworld/extensions/blob/main/voice.md> documents only 9 of these, the

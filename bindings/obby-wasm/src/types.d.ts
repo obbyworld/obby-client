@@ -1096,7 +1096,7 @@ turn: TurnCredentials | null, };
 export type VoiceRoomKind = "publish" | "stream";
 
 /**
- * One `+obsidianirc/rtc` signalling frame.
+ * One `obsidianirc/rtc` signalling frame.
  *
  * Every variant is one JSON object's `type`. The published
  * <https://github.com/obbyworld/extensions/blob/main/voice.md> documents only 9 of these, the

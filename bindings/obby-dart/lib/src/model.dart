@@ -2820,7 +2820,7 @@ enum VoiceRoomKind {
   String get wire => name;
 }
 
-/// One `+obsidianirc/rtc` signalling frame.
+/// One `obsidianirc/rtc` signalling frame.
 /// Every variant is one JSON object's `type`. The published
 /// <https://github.com/obbyworld/extensions/blob/main/voice.md> documents only 9 of these, the
 /// wire carries 19, and this enum follows the wire. Outbound intent and inbound notification are modelled as distinct shapes where the

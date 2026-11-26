@@ -847,9 +847,10 @@ impl Client {
             },
             #[cfg(feature = "voice")]
             Command::SendVoiceSignal { channel, signal } => {
+                use crate::voice::RTC_TAG;
                 let mut line = Message::new("TAGMSG", [channel]);
                 line.tags
-                    .set(obby_proto::Tag::new("+obsidianirc/rtc", signal.to_json()));
+                    .set(obby_proto::Tag::new(RTC_TAG, signal.to_json()));
                 line
             }
             Command::Quit { reason } => match reason {
@@ -1571,7 +1572,7 @@ impl Client {
     /// rather than falling through to the conversation.
     #[cfg(feature = "voice")]
     fn handle_rtc(&mut self, message: &Message) -> bool {
-        let Some(payload) = message.tag("+obsidianirc/rtc") else {
+        let Some(payload) = message.tag(crate::voice::RTC_TAG) else {
             return false;
         };
         let Some(channel) = message.param(0) else {
@@ -3355,7 +3356,7 @@ mod voice_tests {
     fn signalling_is_never_a_message_in_the_channel() {
         let mut client = joined();
         client.handle_bytes(
-            br#"@+obsidianirc/rtc={"type":"join","channel":"^general"} :alice!u@h TAGMSG ^general"#,
+            br#"@obsidianirc/rtc={"type":"join","channel":"^general"} :alice!u@h TAGMSG ^general"#,
         );
         client.handle_bytes(b"\r\n");
         assert_eq!(
@@ -3376,7 +3377,7 @@ mod voice_tests {
     #[test]
     fn a_frame_we_cannot_read_is_counted_rather_than_shown() {
         let mut client = joined();
-        client.handle_bytes(b"@+obsidianirc/rtc=not-json :alice!u@h TAGMSG ^general\r\n");
+        client.handle_bytes(b"@obsidianirc/rtc=not-json :alice!u@h TAGMSG ^general\r\n");
         assert_eq!(
             client
                 .model()
@@ -3401,8 +3402,21 @@ mod voice_tests {
         while let Some(bytes) = client.poll_transmit() {
             sent.push_str(&String::from_utf8_lossy(&bytes));
         }
-        assert!(sent.contains(r#"+obsidianirc/rtc={"type":"join","channel":"^general"}"#));
-        assert!(sent.contains("TAGMSG ^general"));
+        assert_eq!(
+            sent,
+            "@obsidianirc/rtc={\"type\":\"join\",\"channel\":\"^general\"} TAGMSG ^general\r\n"
+        );
+    }
+
+    #[test]
+    fn a_client_tag_frame_from_a_peer_is_not_signalling() {
+        let mut client = joined();
+        client.handle_bytes(
+            b"@+obsidianirc/rtc={\"type\":\"join\",\"channel\":\"^general\"} :alice!u@h TAGMSG ^general\r\n",
+        );
+        while let Some(event) = client.poll_event() {
+            assert!(!matches!(event, Event::Voice { .. }));
+        }
     }
 }
 
