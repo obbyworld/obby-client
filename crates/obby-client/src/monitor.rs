@@ -200,6 +200,6 @@ mod tests {
             split_targets("alice,,bob,"),
             ["alice".to_string(), "bob".to_string()]
         );
-        assert!(split_targets("").is_empty());
+        assert_eq!(split_targets(""), [] as [String; 0]);
     }
 }

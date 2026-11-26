@@ -222,7 +222,7 @@ mod tests {
     fn parses_a_bare_command() {
         let msg = parse("PING");
         assert!(msg.is("ping"));
-        assert!(msg.params.is_empty());
+        assert_eq!(msg.params, [] as [String; 0]);
         assert!(msg.source.is_none());
     }
 

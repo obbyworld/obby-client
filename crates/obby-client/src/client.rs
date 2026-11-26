@@ -2382,7 +2382,7 @@ mod time_tests {
         events(&mut client);
 
         client.tick(at(PING_KEEPALIVE_MS + DEAD_LINK_MS - 1));
-        assert!(events(&mut client).is_empty());
+        assert_eq!(events(&mut client), [] as [Event; 0]);
 
         client.tick(at(PING_KEEPALIVE_MS + DEAD_LINK_MS));
         assert_eq!(events(&mut client), [Event::LinkDead]);
@@ -3456,7 +3456,7 @@ mod config_tests {
             serde_json::from_str(r#"{"nick":"me"}"#).expect("a partial config should deserialise");
         assert_eq!(config.nick, "me");
         assert_eq!(config.retention, crate::model::DEFAULT_RETENTION);
-        assert!(config.alt_nicks.is_empty());
+        assert_eq!(config.alt_nicks, [] as [String; 0]);
         assert!(config.sasl.is_none());
     }
 

@@ -214,8 +214,8 @@ mod tests {
 
     #[test]
     fn an_empty_change_yields_nothing() {
-        assert!(parse(&[]).is_empty());
-        assert!(parse(&["+"]).is_empty());
+        assert_eq!(parse(&[]), [] as [ModeChange; 0]);
+        assert_eq!(parse(&["+"]), [] as [ModeChange; 0]);
     }
 
     #[test]

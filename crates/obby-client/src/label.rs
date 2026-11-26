@@ -172,7 +172,7 @@ mod tests {
     fn a_label_never_answered_times_out_and_is_returned() {
         let mut labels = Labels::new();
         labels.register("l1".to_string(), 1_000, "join #chan".to_string());
-        assert!(labels.expire(999).is_empty());
+        assert_eq!(labels.expire(999), [] as [String; 0]);
         assert_eq!(labels.expire(1_000), vec!["join #chan".to_string()]);
     }
 

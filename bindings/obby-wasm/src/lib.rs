@@ -574,7 +574,7 @@ mod tests {
         let config: Config = serde_json::from_str(r#"{"nick":"me"}"#)
             .expect("Config carries serde defaults for everything but the nick");
         assert_eq!(config.nick, "me");
-        assert!(config.alt_nicks.is_empty());
+        assert_eq!(config.alt_nicks, [] as [std::string::String; 0]);
         assert!(config.sasl.is_none());
     }
 }

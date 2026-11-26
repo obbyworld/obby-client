@@ -266,6 +266,6 @@ mod tests {
         caps.advertise("multi-prefix");
         caps.requested(&["multi-prefix".to_string()]);
         caps.acknowledge("multi-prefix");
-        assert!(caps.to_request().is_empty());
+        assert_eq!(caps.to_request(), [] as [String; 0]);
     }
 }

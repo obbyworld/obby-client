@@ -1192,7 +1192,10 @@ mod tests {
     #[test]
     fn the_end_of_a_whois_for_a_nick_with_no_record_reports_nothing() {
         let mut h = Harness::new();
-        assert!(h.feed(":s 318 me nobody :End of /WHOIS list.").is_empty());
+        assert_eq!(
+            h.feed(":s 318 me nobody :End of /WHOIS list."),
+            [] as [Change; 0]
+        );
     }
 
     #[test]
@@ -1228,14 +1231,14 @@ mod tests {
     #[test]
     fn a_rename_of_a_channel_we_are_not_in_changes_nothing() {
         let mut h = Harness::new();
-        assert!(h.feed(":s RENAME #theirs #theirs-too").is_empty());
+        assert_eq!(h.feed(":s RENAME #theirs #theirs-too"), [] as [Change; 0]);
         assert_eq!(h.model.channels().count(), 0);
     }
 
     #[test]
     fn a_message_to_a_channel_we_never_joined_invents_nothing() {
         let mut h = Harness::new();
-        assert!(h.feed(":bob!u@h PRIVMSG #ghost :hello").is_empty());
+        assert_eq!(h.feed(":bob!u@h PRIVMSG #ghost :hello"), [] as [Change; 0]);
         assert_eq!(
             h.model.channels().count(),
             0,
@@ -2017,7 +2020,10 @@ mod tests {
     #[test]
     fn a_prop_for_a_channel_we_never_joined_invents_nothing() {
         let mut h = Harness::new();
-        assert!(h.feed(":s PROP #ghost +obsidianirc/censor").is_empty());
+        assert_eq!(
+            h.feed(":s PROP #ghost +obsidianirc/censor"),
+            [] as [Change; 0]
+        );
         assert_eq!(h.model.channels().count(), 0);
     }
 

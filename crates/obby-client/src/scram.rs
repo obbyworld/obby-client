@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn an_empty_nonce_still_produces_a_usable_one() {
         let scram = Scram::new(USER, PASSWORD, ",,,");
-        assert!(!scram.client_nonce.is_empty());
+        assert_ne!(scram.client_nonce, "");
     }
 
     #[test]

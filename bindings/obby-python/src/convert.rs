@@ -56,7 +56,7 @@ mod tests {
     fn config_from_json_needs_only_a_nick() {
         let config = config_from_json(r#"{"nick":"me"}"#).expect("nick is the only required field");
         assert_eq!(config.nick, "me");
-        assert!(config.alt_nicks.is_empty());
+        assert_eq!(config.alt_nicks, [] as [std::string::String; 0]);
         assert!(config.sasl.is_none());
     }
 

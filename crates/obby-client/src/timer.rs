@@ -200,7 +200,7 @@ mod tests {
     fn a_deadline_fires_exactly_at_its_instant_and_not_before() {
         let mut timers = Timers::new();
         timers.set(Deadline::PingKeepalive, 1_000);
-        assert!(timers.expire(now(999)).is_empty());
+        assert_eq!(timers.expire(now(999)), [] as [Deadline; 0]);
         assert_eq!(timers.expire(now(1_000)), vec![Deadline::PingKeepalive]);
     }
 
@@ -226,7 +226,7 @@ mod tests {
         let mut timers = Timers::new();
         timers.set(Deadline::DeadLink, 100);
         assert_eq!(timers.expire(now(200)), vec![Deadline::DeadLink]);
-        assert!(timers.expire(now(200)).is_empty());
+        assert_eq!(timers.expire(now(200)), [] as [Deadline; 0]);
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
         let mut timers = Timers::new();
         timers.set(Deadline::PingKeepalive, 100);
         timers.clear(&Deadline::PingKeepalive);
-        assert!(timers.expire(now(1_000)).is_empty());
+        assert_eq!(timers.expire(now(1_000)), [] as [Deadline; 0]);
         assert_eq!(timers.next(), None);
     }
 
