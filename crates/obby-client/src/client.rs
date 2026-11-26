@@ -778,7 +778,13 @@ impl Client {
                 // goes ahead of the paced ones
                 self.send_catch_up_now(&target);
                 let limit = self.history_limit(limit);
-                self.send_line_labeled(&Self::chathistory(target, before_msgid, limit));
+                let selector = if before_msgid.is_some() {
+                    "BEFORE"
+                } else {
+                    "LATEST"
+                };
+                let line = Self::chathistory(selector, target, before_msgid.as_deref(), limit);
+                self.send_line_labeled(&line);
             }
             other => {
                 if let Some(line) = Self::wire(other) {
@@ -925,12 +931,9 @@ impl Client {
         }
     }
 
-    /// Ask for a page of history: the newest messages, or the ones before a message we hold.
-    fn chathistory(target: String, before_msgid: Option<String>, limit: u16) -> Message {
-        let (selector, point) = match before_msgid {
-            Some(msgid) => ("BEFORE", alloc::format!("msgid={msgid}")),
-            None => ("LATEST", "*".to_string()),
-        };
+    /// Ask for a page of history on one side of a message we hold, or the newest page.
+    fn chathistory(selector: &str, target: String, msgid: Option<&str>, limit: u16) -> Message {
+        let point = msgid.map_or_else(|| "*".to_string(), |msgid| alloc::format!("msgid={msgid}"));
         Message::new(
             "CHATHISTORY",
             [selector.to_string(), target, point, limit.to_string()],
@@ -1078,12 +1081,8 @@ impl Client {
     }
 
     fn send_catch_up_for(&mut self, name: String, msgid: &str) {
-        let limit = self.history_limit(100).to_string();
-        let point = alloc::format!("msgid={msgid}");
-        self.send_line(&Message::new(
-            "CHATHISTORY",
-            ["AFTER".to_string(), name, point, limit],
-        ));
+        let limit = self.history_limit(100);
+        self.send_line(&Self::chathistory("AFTER", name, Some(msgid), limit));
     }
 
     /// Ask for a target's missed history now, when a reconnect still has it waiting.
