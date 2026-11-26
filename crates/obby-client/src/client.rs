@@ -1032,6 +1032,11 @@ impl Client {
     /// assert_eq!(client.poll_transmit(), Some(b"PONG abc\r\n".to_vec()));
     /// ```
     pub fn handle_bytes(&mut self, data: &[u8]) {
+        // a server that paces our commands answers a PING late, so we take any bytes it sends, even
+        // a line we go on to drop, as proof the link is alive
+        if !data.is_empty() {
+            self.arm_keepalive();
+        }
         self.partial.extend_from_slice(data);
         loop {
             // we end a line at any CR or LF, so no parameter we parse carries one into a line we send
@@ -1181,8 +1186,6 @@ impl Client {
     }
 
     fn handle_message(&mut self, message: Message) {
-        // any line at all proves the link is alive, so the keepalive clock starts over
-        self.arm_keepalive();
         self.labels.resolve(&message);
         if message.is("PONG") {
             return;
@@ -2490,6 +2493,19 @@ mod time_tests {
             !events(&mut client).contains(&Event::LinkDead),
             "a pong clears the dead-link deadline"
         );
+    }
+
+    #[test]
+    fn a_line_we_drop_still_proves_the_link_is_alive() {
+        let mut client = Client::new(Config::new("me"));
+        client.handle_connected();
+        client.tick(at(PING_KEEPALIVE_MS));
+        sent(&mut client);
+
+        client.handle_bytes(b"@only-tags\r\n:half a line");
+        client.tick(at(PING_KEEPALIVE_MS + DEAD_LINK_MS));
+        assert!(!events(&mut client).contains(&Event::LinkDead));
+        assert_eq!(client.dropped_lines(), 1);
     }
 
     #[test]
