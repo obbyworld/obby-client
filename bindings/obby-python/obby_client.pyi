@@ -507,7 +507,7 @@ class ObbyEventBotsChanged(TypedDict):
 class ObbyEventAuthToken(TypedDict):
     type: Literal["auth_token"]
     service: str
-    endpoint: str
+    endpoint: str | None
     token: str
 
 class ObbyEventVoice(TypedDict):

@@ -490,7 +490,7 @@ pub enum ObbyEventField {
     Online,
     /// The network service a token is for.
     Service,
-    /// Where to present a token.
+    /// Where to present a token. Null when the server named anything but an https URL.
     Endpoint,
     /// A bearer token. `Token` is already the name of a `005` token, which this is not.
     BearerToken,
@@ -628,7 +628,9 @@ fn event_out(event: &Event) -> ObbyEvent {
         } => {
             out.kind = ObbyEventKind::AuthToken;
             out.text(ObbyEventField::Service, service);
-            out.text(ObbyEventField::Endpoint, endpoint);
+            if let Some(endpoint) = endpoint {
+                out.text(ObbyEventField::Endpoint, endpoint);
+            }
             out.text(ObbyEventField::BearerToken, token);
         }
         Event::RawLine { .. } => out.kind = ObbyEventKind::RawLine,

@@ -189,7 +189,7 @@ typedef enum obby_event_field {
      */
     OBBY_EVENT_FIELD_SERVICE,
     /**
-     * Where to present a token.
+     * Where to present a token. Null when the server named anything but an https URL.
      */
     OBBY_EVENT_FIELD_ENDPOINT,
     /**

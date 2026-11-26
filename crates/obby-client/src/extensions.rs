@@ -222,6 +222,36 @@ pub(crate) const BOT_INFO_TAG: &str = "obby.world/bot-info";
 /// The tag a bot answers a command-list query with, on a bodiless `TAGMSG`.
 pub(crate) const BOT_COMMANDS_TAG: &str = "+draft/bot-cmds";
 
+/// True for a service URL the server may point us at: https with no credentials in it, or http on
+/// this machine so a local stack can serve one.
+pub(crate) fn is_safe_service_url(url: &str) -> bool {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.contains('@') || url.contains(char::is_control) {
+        return false;
+    }
+    let host = match authority.strip_prefix('[') {
+        Some(v6) => v6.split_once(']').map_or("", |(host, _)| host),
+        None => authority.split(':').next().unwrap_or_default(),
+    };
+    if host.is_empty() {
+        return false;
+    }
+    scheme.eq_ignore_ascii_case("https")
+        || (scheme.eq_ignore_ascii_case("http") && is_loopback(host))
+}
+
+fn is_loopback(host: &str) -> bool {
+    let is_octet = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    host.eq_ignore_ascii_case("localhost")
+        || host == "::1"
+        || host
+            .strip_prefix("127.")
+            .is_some_and(|rest| rest.split('.').count() == 3 && rest.split('.').all(is_octet))
+}
+
 /// One announcement the server made about a bot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BotInfo {
@@ -371,6 +401,33 @@ mod tests {
 
     fn line(raw: &str) -> Line {
         Line::parse(raw).expect("the test line should parse")
+    }
+
+    #[test]
+    fn a_service_url_is_https_or_local_http() {
+        for safe in [
+            "https://files.example.org/upload",
+            "HTTPS://files.example.org:8443",
+            "http://localhost:8080/upload",
+            "http://127.0.0.1/upload",
+            "http://[::1]:3000",
+        ] {
+            assert!(is_safe_service_url(safe), "{safe}");
+        }
+        for unsafe_url in [
+            "http://files.example.org/upload",
+            "ftp://files.example.org",
+            "javascript:alert(1)",
+            "https://user:pass@files.example.org",
+            "https://@files.example.org",
+            "https://",
+            "http://127.0.0.1.evil.example",
+            "http://localhost.evil.example",
+            "https://files.example.org/\u{7}",
+            "files.example.org",
+        ] {
+            assert!(!is_safe_service_url(unsafe_url), "{unsafe_url}");
+        }
     }
 
     #[test]

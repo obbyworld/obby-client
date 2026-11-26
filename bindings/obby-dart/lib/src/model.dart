@@ -2222,7 +2222,7 @@ class ObbyEventAuthToken extends ObbyEvent {
 
   factory ObbyEventAuthToken.fromJson(Map<String, dynamic> json) => ObbyEventAuthToken(
     service: json['service'] as String,
-    endpoint: json['endpoint'] as String,
+    endpoint: json['endpoint'] == null ? null : json['endpoint'] as String,
     token: json['token'] as String,
   );
 
@@ -2237,8 +2237,9 @@ class ObbyEventAuthToken extends ObbyEvent {
   /// The service it is for, as the server spells it.
   final String service;
 
-  /// Where to present it.
-  final String endpoint;
+  /// Where to present it. `None` when the server named anything but an https URL, or an http
+  /// one on this machine, because the token would go wherever this points.
+  final String? endpoint;
 
   /// The token itself.
   final String token;

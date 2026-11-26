@@ -171,8 +171,9 @@ pub enum Event {
     AuthToken {
         /// The service it is for, as the server spells it.
         service: String,
-        /// Where to present it.
-        endpoint: String,
+        /// Where to present it. `None` when the server named anything but an https URL, or an http
+        /// one on this machine, because the token would go wherever this points.
+        endpoint: Option<String>,
         /// The token itself.
         token: String,
     },
@@ -1660,7 +1661,8 @@ impl Client {
         };
         self.events.push_back(Event::AuthToken {
             service: service.to_string(),
-            endpoint: endpoint.to_string(),
+            endpoint: crate::extensions::is_safe_service_url(endpoint)
+                .then(|| endpoint.to_string()),
             token: token.to_string(),
         });
         true
@@ -2944,7 +2946,19 @@ mod command_tests {
         assert!(events(&mut client).iter().any(|event| matches!(
             event,
             Event::AuthToken { service, endpoint, token }
-                if service == "filehost" && endpoint == "https://irc.example.org" && token == "tok3n"
+                if service == "filehost"
+                    && endpoint.as_deref() == Some("https://irc.example.org")
+                    && token == "tok3n"
+        )));
+    }
+
+    #[test]
+    fn a_token_keeps_no_endpoint_but_https() {
+        let mut client = ready(b":s CAP * NAK :echo-message\r\n");
+        client.handle_bytes(b":s TOKEN GENERATE filehost http://evil.example tok3n\r\n");
+        assert!(events(&mut client).iter().any(|event| matches!(
+            event,
+            Event::AuthToken { endpoint: None, token, .. } if token == "tok3n"
         )));
     }
 

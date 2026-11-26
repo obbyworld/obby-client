@@ -807,9 +807,10 @@ nick: string, } | { "type": "auth_token",
  */
 service: string, 
 /**
- * Where to present it.
+ * Where to present it. `None` when the server named anything but an https URL, or an http
+ * one on this machine, because the token would go wherever this points.
  */
-endpoint: string, 
+endpoint: string | null, 
 /**
  * The token itself.
  */

@@ -146,7 +146,7 @@ fn registers_joins_and_speaks_to_a_real_server() -> Result<(), Box<dyn std::erro
                 } => whois_done = true,
                 Event::AuthToken {
                     service, endpoint, ..
-                } => println!("minted a {service} token for {endpoint}"),
+                } => println!("minted a {service} token for {endpoint:?}"),
                 Event::ServerReply { severity, code, .. } => {
                     println!("server reply: {severity:?} {code}");
                 }
