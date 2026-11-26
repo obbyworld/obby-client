@@ -961,8 +961,7 @@ impl Client {
 
     /// Send something that lands in a conversation, recording it ourselves if no echo is coming.
     fn say(&mut self, line: &Message) {
-        self.send_line_labeled(line);
-        if self.caps.has("echo-message") {
+        if self.send_labeled(line).is_err() || self.caps.has("echo-message") {
             return;
         }
         let mut echo = line.clone();
@@ -980,9 +979,17 @@ impl Client {
     /// still goes out, unlabelled, because a server that does not support it would only be confused
     /// by the tag.
     pub fn send_line_labeled(&mut self, message: &Message) -> Option<String> {
+        self.send_labeled(message).ok().flatten()
+    }
+
+    /// Send a command with a label when the server takes one, and `Err` when the line was refused.
+    fn send_labeled(&mut self, message: &Message) -> Result<Option<String>, ()> {
         if !self.caps.has("labeled-response") {
-            self.send_line(message);
-            return None;
+            return if self.send_line(message) {
+                Ok(None)
+            } else {
+                Err(())
+            };
         }
         let label = self.labels.generate();
         let mut message = message.clone();
@@ -990,14 +997,14 @@ impl Client {
             .tags
             .set(obby_proto::Tag::new("label", label.clone()));
         if !self.send_line(&message) {
-            return None;
+            return Err(());
         }
         self.labels.register(
             label.clone(),
             self.monotonic_ms.saturating_add(DEFAULT_TIMEOUT_MS),
             message.command.clone(),
         );
-        Some(label)
+        Ok(Some(label))
     }
 
     /// Put the connection back where it was.
@@ -2095,6 +2102,17 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_refused_message_is_not_recorded_as_said() {
+        let mut client = Client::new(Config::new("me"));
+        client.send_message("bob", "hi\0there");
+        assert_eq!(drain(&mut client), "");
+        assert!(matches!(
+            events(&mut client).as_slice(),
+            [Event::LineRefused { .. }]
+        ));
     }
 
     #[test]
