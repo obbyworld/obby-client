@@ -14,7 +14,8 @@ use crate::monitor::{self, WatchList};
 use crate::sasl::{self, Credentials, SaslFailure, SaslState};
 use crate::session::{self, Change};
 use crate::timer::{
-    DEAD_LINK_MS, Deadline, Now, PING_KEEPALIVE_MS, ReconnectBackoff, TYPING_EXPIRY_MS, Timers,
+    CATCH_UP_BURST, CATCH_UP_PACE_MS, DEAD_LINK_MS, Deadline, Now, PING_KEEPALIVE_MS,
+    ReconnectBackoff, TYPING_EXPIRY_MS, Timers,
 };
 
 /// How far the connection has got.
@@ -243,6 +244,8 @@ pub struct Client {
     monitor: WatchList,
     /// Channel keys, so a rejoin after a reconnect is not refused for want of one.
     channel_keys: alloc::collections::BTreeMap<obby_proto::CaseFolded, String>,
+    /// Channels a reconnect still has to ask for missed history, with the newest message we hold.
+    catch_up: VecDeque<(String, String)>,
     /// Channels we sent a JOIN for and have not heard the outcome of.
     joins_in_flight: alloc::collections::BTreeSet<obby_proto::CaseFolded>,
     /// Metadata keys we subscribed to, so a reconnect can ask again.
@@ -307,6 +310,7 @@ impl Client {
             batches: Batches::new(),
             monitor: WatchList::new(),
             channel_keys: alloc::collections::BTreeMap::new(),
+            catch_up: VecDeque::new(),
             joins_in_flight: alloc::collections::BTreeSet::new(),
             metadata_subscriptions: Vec::new(),
             #[cfg(feature = "voice")]
@@ -387,6 +391,8 @@ impl Client {
             channel.members.clear();
         }
         self.joins_in_flight.clear();
+        self.catch_up.clear();
+        self.timers.clear(&Deadline::CatchUp);
         self.timers.clear(&Deadline::PingKeepalive);
         self.timers.clear(&Deadline::DeadLink);
         match self.backoff.next_delay_ms() {
@@ -435,6 +441,7 @@ impl Client {
                 }
                 Deadline::DeadLink => self.events.push_back(Event::LinkDead),
                 Deadline::Reconnect => self.events.push_back(Event::ReconnectAfter { after_ms: 0 }),
+                Deadline::CatchUp => self.send_catch_up(1),
                 Deadline::Typing(target, who) => self.expire_typing(&target, &who),
             }
         }
@@ -764,6 +771,9 @@ impl Client {
                 before_msgid,
                 limit,
             } => {
+                // a host asks for the history of the chat in front of the user, so its catch-up
+                // goes ahead of the paced ones
+                self.send_catch_up_now(&target);
                 let limit = self.history_limit(limit);
                 self.send_line_labeled(&Self::chathistory(target, before_msgid, limit));
             }
@@ -1026,16 +1036,48 @@ impl Client {
             // ask only for what happened while we were gone, rather than refetching a whole window
             // and leaning on dedup to sort it out
             if let (true, Some(msgid)) = (self.caps.has("draft/chathistory"), newest) {
-                self.send_line(&Message::new(
-                    "CHATHISTORY",
-                    [
-                        "AFTER".to_string(),
-                        name,
-                        alloc::format!("msgid={msgid}"),
-                        self.history_limit(100).to_string(),
-                    ],
-                ));
+                self.catch_up.push_back((name, msgid));
             }
+        }
+        self.send_catch_up(CATCH_UP_BURST);
+    }
+
+    /// Ask for the missed history of the next few channels, and schedule the rest.
+    fn send_catch_up(&mut self, count: usize) {
+        for _ in 0..count {
+            let Some((name, msgid)) = self.catch_up.pop_front() else {
+                break;
+            };
+            self.send_catch_up_for(name, &msgid);
+        }
+        if self.catch_up.is_empty() {
+            self.timers.clear(&Deadline::CatchUp);
+        } else {
+            self.timers.set(
+                Deadline::CatchUp,
+                self.monotonic_ms.saturating_add(CATCH_UP_PACE_MS),
+            );
+        }
+    }
+
+    fn send_catch_up_for(&mut self, name: String, msgid: &str) {
+        let limit = self.history_limit(100).to_string();
+        let point = alloc::format!("msgid={msgid}");
+        self.send_line(&Message::new(
+            "CHATHISTORY",
+            ["AFTER".to_string(), name, point, limit],
+        ));
+    }
+
+    /// Ask for a target's missed history now, when a reconnect still has it waiting.
+    fn send_catch_up_now(&mut self, target: &str) {
+        let folded = self.isupport.fold(target);
+        let waiting = self
+            .catch_up
+            .iter()
+            .position(|(name, _)| self.isupport.fold(name) == folded);
+        if let Some((name, msgid)) = waiting.and_then(|index| self.catch_up.remove(index)) {
+            self.send_catch_up_for(name, &msgid);
         }
     }
 
@@ -3106,6 +3148,37 @@ mod resume_tests {
             !replay.contains("CHATHISTORY AFTER #other"),
             "a channel we have no message for has no point to resume from"
         );
+    }
+
+    #[test]
+    fn a_reconnect_paces_the_history_it_missed() {
+        let mut client = established();
+        for channel in ["#a", "#b", "#c", "#d", "#e"] {
+            client.handle_bytes(format!(":me!u@h JOIN {channel}\r\n").as_bytes());
+            client.handle_bytes(
+                format!("@msgid=m{channel} :bob!u@h PRIVMSG {channel} :hi\r\n").as_bytes(),
+            );
+        }
+        client.handle_disconnected();
+        client.handle_connected();
+        client.handle_bytes(b":s CAP * LS :draft/chathistory\r\n");
+        client.handle_bytes(b":s CAP * ACK :draft/chathistory\r\n");
+        client.handle_bytes(b":s 001 me :Welcome back\r\n");
+        let first = sent(&mut client);
+        assert_eq!(first.matches("CHATHISTORY AFTER").count(), CATCH_UP_BURST);
+
+        client.fetch_history("#e", None, 50);
+        assert!(
+            sent(&mut client).starts_with("CHATHISTORY AFTER #e msgid=m#e 100\r\n"),
+            "the chat the host asks about is caught up first"
+        );
+
+        client.tick(Now {
+            monotonic_ms: CATCH_UP_PACE_MS,
+            unix_ms: 0,
+        });
+        assert_eq!(sent(&mut client).matches("CHATHISTORY AFTER").count(), 1);
+        assert_eq!(client.poll_timeout(), Some(PING_KEEPALIVE_MS));
     }
 
     #[test]
