@@ -243,6 +243,8 @@ pub struct Client {
     monitor: WatchList,
     /// Channel keys, so a rejoin after a reconnect is not refused for want of one.
     channel_keys: alloc::collections::BTreeMap<obby_proto::CaseFolded, String>,
+    /// Channels we sent a JOIN for and have not heard the outcome of.
+    joins_in_flight: alloc::collections::BTreeSet<obby_proto::CaseFolded>,
     /// Metadata keys we subscribed to, so a reconnect can ask again.
     metadata_subscriptions: Vec<String>,
     #[cfg(feature = "voice")]
@@ -305,6 +307,7 @@ impl Client {
             batches: Batches::new(),
             monitor: WatchList::new(),
             channel_keys: alloc::collections::BTreeMap::new(),
+            joins_in_flight: alloc::collections::BTreeSet::new(),
             metadata_subscriptions: Vec::new(),
             #[cfg(feature = "voice")]
             rooms: alloc::collections::BTreeMap::new(),
@@ -383,6 +386,7 @@ impl Client {
         for (_, channel) in self.model.channels_mut() {
             channel.members.clear();
         }
+        self.joins_in_flight.clear();
         self.timers.clear(&Deadline::PingKeepalive);
         self.timers.clear(&Deadline::DeadLink);
         match self.backoff.next_delay_ms() {
@@ -724,6 +728,15 @@ impl Client {
             // not tell us what we asked for last time
             Command::Join { channel, key } => {
                 let folded = self.isupport.fold(&channel);
+                // a host that rejoins its saved channels on connect asks for the ones the reconnect
+                // already rejoined, and the server counts every JOIN against its flood limit
+                let same_key = key
+                    .as_ref()
+                    .is_none_or(|key| self.channel_keys.get(&folded) == Some(key));
+                if same_key && self.joins_in_flight.contains(&folded) {
+                    return;
+                }
+                self.joins_in_flight.insert(folded.clone());
                 match &key {
                     Some(key) => self.channel_keys.insert(folded, key.clone()),
                     None => self.channel_keys.remove(&folded),
@@ -988,7 +1001,9 @@ impl Client {
         }
 
         for (name, newest) in rejoining {
-            let key = self.channel_keys.get(&self.isupport.fold(&name)).cloned();
+            let folded = self.isupport.fold(&name);
+            let key = self.channel_keys.get(&folded).cloned();
+            self.joins_in_flight.insert(folded);
             let join = match key {
                 Some(key) => Message::new("JOIN", [name.clone(), key]),
                 None => Message::new("JOIN", [name.clone()]),
@@ -1187,6 +1202,11 @@ impl Client {
 
     fn handle_message(&mut self, message: Message) {
         self.labels.resolve(&message);
+        if JOIN_REFUSALS.contains(&message.command.as_str())
+            && let Some(channel) = message.param(1)
+        {
+            self.joins_in_flight.remove(&self.isupport.fold(channel));
+        }
         if message.is("PONG") {
             return;
         }
@@ -1337,6 +1357,7 @@ impl Client {
             // NAMES gives us nicks and prefixes and nothing else, so joining is when we go and ask
             // who these people actually are
             if let Change::ChannelJoined { channel } = change {
+                self.joins_in_flight.remove(&self.isupport.fold(channel));
                 self.request_who(channel);
             }
             // the key and the room are keyed by the folded name the channel no longer has, and the
@@ -1872,6 +1893,11 @@ fn severity_of(command: &str) -> Option<Severity> {
         _ => None,
     }
 }
+
+/// The numerics a server refuses a JOIN with, each naming the channel second.
+const JOIN_REFUSALS: [&str; 12] = [
+    "403", "405", "471", "473", "474", "475", "476", "477", "479", "489", "500", "520",
+];
 
 /// Map a SASL error numeric onto why it failed.
 fn sasl_failure(command: &str) -> Option<SaslFailure> {
@@ -3053,6 +3079,31 @@ mod resume_tests {
         assert!(
             !replay.contains("CHATHISTORY AFTER #other"),
             "a channel we have no message for has no point to resume from"
+        );
+    }
+
+    #[test]
+    fn a_reconnect_joins_each_channel_once() {
+        let mut client = established();
+        client.handle_disconnected();
+        client.handle_connected();
+        client.handle_bytes(b":s CAP * LS :\r\n:s 001 me :Welcome back\r\n");
+        sent(&mut client);
+
+        client.join("#OBBY", None);
+        client.join("#new", None);
+        client.join("#new", None);
+        assert_eq!(sent(&mut client), "JOIN #new\r\n");
+
+        client.handle_bytes(b":s 474 me #other :Cannot join channel (+b)\r\n");
+        client.handle_bytes(b":me!u@h JOIN #obby\r\n");
+        sent(&mut client);
+        client.join("#other", None);
+        client.join("#obby", None);
+        assert_eq!(
+            sent(&mut client),
+            "JOIN #other\r\nJOIN #obby\r\n",
+            "a refused or finished join no longer holds the next one back"
         );
     }
 
