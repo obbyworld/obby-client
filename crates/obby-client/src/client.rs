@@ -759,6 +759,14 @@ impl Client {
             }
             Command::WatchNicks { nicks } => self.set_watching(&nicks, true),
             Command::UnwatchNicks { nicks } => self.set_watching(&nicks, false),
+            Command::FetchHistory {
+                target,
+                before_msgid,
+                limit,
+            } => {
+                let limit = self.history_limit(limit);
+                self.send_line_labeled(&Self::chathistory(target, before_msgid, limit));
+            }
             other => {
                 if let Some(line) = Self::wire(other) {
                     self.send_line_labeled(&line);
@@ -777,7 +785,9 @@ impl Client {
             | Command::SendAction { .. }
             | Command::WatchNicks { .. }
             | Command::UnwatchNicks { .. } => return None,
-            Command::Join { .. } | Command::SubscribeMetadata { .. } => return None,
+            Command::Join { .. }
+            | Command::SubscribeMetadata { .. }
+            | Command::FetchHistory { .. } => return None,
             Command::Part { channel, reason } => match reason {
                 Some(reason) => Message::new("PART", [channel, reason]),
                 None => Message::new("PART", [channel]),
@@ -826,11 +836,6 @@ impl Client {
                     alloc::format!("timestamp={}", obby_proto::format_server_time(at_ms)),
                 ],
             ),
-            Command::FetchHistory {
-                target,
-                before_msgid,
-                limit,
-            } => Self::chathistory(target, before_msgid, limit),
             Command::Whois { nick } => Message::new("WHOIS", [nick]),
             Command::RenameChannel {
                 channel,
@@ -888,6 +893,15 @@ impl Client {
         let verb = if watching { "+" } else { "-" };
         for chunk in monitor::batched(nicks, limit) {
             self.send_line(&Message::new("MONITOR", [verb.to_string(), chunk]));
+        }
+    }
+
+    /// No more history than the server serves in one page, which it states as `CHATHISTORY=<n>`
+    /// with 0 meaning no limit.
+    fn history_limit(&self, wanted: u16) -> u16 {
+        match self.isupport.number("CHATHISTORY") {
+            Some(most) if most > 0 => wanted.min(u16::try_from(most).unwrap_or(u16::MAX)),
+            _ => wanted,
         }
     }
 
@@ -1018,7 +1032,7 @@ impl Client {
                         "AFTER".to_string(),
                         name,
                         alloc::format!("msgid={msgid}"),
-                        "100".to_string(),
+                        self.history_limit(100).to_string(),
                     ],
                 ));
             }
@@ -2923,6 +2937,18 @@ mod command_tests {
             limit: 50,
         });
         assert!(sent(&mut client).contains("CHATHISTORY BEFORE #obby msgid=m1 50"));
+    }
+
+    #[test]
+    fn asks_for_no_more_history_than_the_server_serves_at_once() {
+        let mut client = ready(b":s CAP * NAK :echo-message\r\n");
+        client.handle_bytes(b":s 005 me CHATHISTORY=20 :are supported\r\n");
+        client.fetch_history("#obby", None, 50);
+        assert!(sent(&mut client).contains("CHATHISTORY LATEST #obby * 20"));
+
+        client.handle_bytes(b":s 005 me CHATHISTORY=0 :are supported\r\n");
+        client.fetch_history("#obby", None, 50);
+        assert!(sent(&mut client).contains("CHATHISTORY LATEST #obby * 50"));
     }
 
     #[test]
