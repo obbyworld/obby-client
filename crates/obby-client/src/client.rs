@@ -246,8 +246,7 @@ pub struct Client {
     channel_keys: alloc::collections::BTreeMap<obby_proto::CaseFolded, String>,
     /// Channels a reconnect still has to ask for missed history, with the newest message we hold.
     catch_up: VecDeque<(String, String)>,
-    /// Channels we sent a JOIN for and have not heard the outcome of.
-    joins_in_flight: alloc::collections::BTreeSet<obby_proto::CaseFolded>,
+    pending_joins: PendingJoins,
     /// Metadata keys we subscribed to, so a reconnect can ask again.
     metadata_subscriptions: Vec<String>,
     #[cfg(feature = "voice")]
@@ -311,7 +310,7 @@ impl Client {
             monitor: WatchList::new(),
             channel_keys: alloc::collections::BTreeMap::new(),
             catch_up: VecDeque::new(),
-            joins_in_flight: alloc::collections::BTreeSet::new(),
+            pending_joins: PendingJoins::default(),
             metadata_subscriptions: Vec::new(),
             #[cfg(feature = "voice")]
             rooms: alloc::collections::BTreeMap::new(),
@@ -390,7 +389,7 @@ impl Client {
         for (_, channel) in self.model.channels_mut() {
             channel.members.clear();
         }
-        self.joins_in_flight.clear();
+        self.pending_joins.clear();
         self.catch_up.clear();
         self.timers.clear(&Deadline::CatchUp);
         self.timers.clear(&Deadline::PingKeepalive);
@@ -449,6 +448,7 @@ impl Client {
         for command in self.labels.expire(now.monotonic_ms) {
             self.events.push_back(Event::CommandTimedOut { command });
         }
+        self.pending_joins.expire(now.monotonic_ms);
     }
 
     /// When [`Client::tick`] next has something to do, as a monotonic instant.
@@ -740,10 +740,13 @@ impl Client {
                 let same_key = key
                     .as_ref()
                     .is_none_or(|key| self.channel_keys.get(&folded) == Some(key));
-                if same_key && self.joins_in_flight.contains(&folded) {
-                    return;
+                // a server answers a JOIN for a channel we are already in with nothing at all
+                if !self.is_member(&folded) {
+                    if same_key && self.pending_joins.is_pending(&folded) {
+                        return;
+                    }
+                    self.pending_joins.start(folded.clone(), self.monotonic_ms);
                 }
-                self.joins_in_flight.insert(folded.clone());
                 match &key {
                     Some(key) => self.channel_keys.insert(folded, key.clone()),
                     None => self.channel_keys.remove(&folded),
@@ -906,6 +909,13 @@ impl Client {
         }
     }
 
+    fn is_member(&self, channel: &obby_proto::CaseFolded) -> bool {
+        let me = self.isupport.fold(&self.nick);
+        self.model
+            .channel(channel)
+            .is_some_and(|channel| channel.members.contains_key(&me))
+    }
+
     /// No more history than the server serves in one page, which it states as `CHATHISTORY=<n>`
     /// with 0 meaning no limit.
     fn history_limit(&self, wanted: u16) -> u16 {
@@ -1027,7 +1037,7 @@ impl Client {
         for (name, newest) in rejoining {
             let folded = self.isupport.fold(&name);
             let key = self.channel_keys.get(&folded).cloned();
-            self.joins_in_flight.insert(folded);
+            self.pending_joins.start(folded, self.monotonic_ms);
             let join = match key {
                 Some(key) => Message::new("JOIN", [name.clone(), key]),
                 None => Message::new("JOIN", [name.clone()]),
@@ -1258,10 +1268,8 @@ impl Client {
 
     fn handle_message(&mut self, message: Message) {
         self.labels.resolve(&message);
-        if JOIN_REFUSALS.contains(&message.command.as_str())
-            && let Some(channel) = message.param(1)
-        {
-            self.joins_in_flight.remove(&self.isupport.fold(channel));
+        if let Some(channel) = refused_join(&message) {
+            self.pending_joins.finish(&self.isupport.fold(channel));
         }
         if message.is("PONG") {
             return;
@@ -1413,7 +1421,7 @@ impl Client {
             // NAMES gives us nicks and prefixes and nothing else, so joining is when we go and ask
             // who these people actually are
             if let Change::ChannelJoined { channel } = change {
-                self.joins_in_flight.remove(&self.isupport.fold(channel));
+                self.pending_joins.finish(&self.isupport.fold(channel));
                 self.request_who(channel);
             }
             // the key and the room are keyed by the folded name the channel no longer has, and the
@@ -1950,10 +1958,47 @@ fn severity_of(command: &str) -> Option<Severity> {
     }
 }
 
-/// The numerics a server refuses a JOIN with, each naming the channel second.
-const JOIN_REFUSALS: [&str; 12] = [
-    "403", "405", "471", "473", "474", "475", "476", "477", "479", "489", "500", "520",
-];
+/// JOINs we sent and have not heard the outcome of, each held until a deadline so a JOIN the
+/// server never answers stops holding the next one back.
+#[derive(Debug, Default)]
+struct PendingJoins(alloc::collections::BTreeMap<obby_proto::CaseFolded, u64>);
+
+impl PendingJoins {
+    fn start(&mut self, channel: obby_proto::CaseFolded, now_ms: u64) {
+        self.0
+            .insert(channel, now_ms.saturating_add(DEFAULT_TIMEOUT_MS));
+    }
+
+    fn is_pending(&self, channel: &obby_proto::CaseFolded) -> bool {
+        self.0.contains_key(channel)
+    }
+
+    fn finish(&mut self, channel: &obby_proto::CaseFolded) {
+        self.0.remove(channel);
+    }
+
+    fn expire(&mut self, now_ms: u64) {
+        crate::timer::drain_due(&mut self.0, now_ms, |at| *at);
+    }
+
+    fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+/// The channel a server refused us, when this line is a refusal of a JOIN.
+fn refused_join(message: &Message) -> Option<&str> {
+    const REFUSALS: [&str; 13] = [
+        "403", "405", "470", "471", "473", "474", "475", "476", "477", "479", "489", "500", "520",
+    ];
+    if message.is("FAIL") && message.param(0) == Some("JOIN") {
+        return message.param(2);
+    }
+    REFUSALS
+        .contains(&message.command.as_str())
+        .then(|| message.param(1))
+        .flatten()
+}
 
 /// Map a SASL error numeric onto why it failed.
 fn sasl_failure(command: &str) -> Option<SaslFailure> {
@@ -3204,6 +3249,39 @@ mod resume_tests {
             "JOIN #other\r\nJOIN #obby\r\n",
             "a refused or finished join no longer holds the next one back"
         );
+    }
+
+    #[test]
+    fn a_join_stops_waiting_on_a_fail_a_link_or_its_deadline() {
+        let mut client = established();
+        for channel in ["#fail", "#linked", "#silent"] {
+            client.join(channel, None);
+        }
+        client.handle_bytes(b":s FAIL JOIN CHANNEL_CLOSED #fail :closed\r\n");
+        client.handle_bytes(b":s 470 me #linked #overflow :Forwarding\r\n");
+        sent(&mut client);
+        client.join("#fail", None);
+        client.join("#linked", None);
+        client.join("#silent", None);
+        assert_eq!(sent(&mut client), "JOIN #fail\r\nJOIN #linked\r\n");
+
+        client.tick(Now {
+            monotonic_ms: DEFAULT_TIMEOUT_MS,
+            unix_ms: 0,
+        });
+        sent(&mut client);
+        client.join("#silent", None);
+        assert_eq!(sent(&mut client), "JOIN #silent\r\n");
+    }
+
+    #[test]
+    fn a_join_for_a_channel_we_are_in_never_waits() {
+        let mut client = established();
+        client.handle_bytes(b":s 353 me = #obby :me bob\r\n:s 366 me #obby :End\r\n");
+        sent(&mut client);
+        client.join("#obby", None);
+        client.join("#obby", None);
+        assert_eq!(sent(&mut client), "JOIN #obby\r\nJOIN #obby\r\n");
     }
 
     #[test]
