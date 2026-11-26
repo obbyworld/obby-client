@@ -17,6 +17,8 @@ use crate::timer::{
     CATCH_UP_BURST, CATCH_UP_PACE_MS, DEAD_LINK_MS, Deadline, Now, PING_KEEPALIVE_MS,
     ReconnectBackoff, TYPING_EXPIRY_MS, Timers,
 };
+#[cfg(feature = "voice")]
+use crate::voice::RTC_TAG;
 
 /// How far the connection has got.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,8 +174,8 @@ pub enum Event {
     AuthToken {
         /// The service it is for, as the server spells it.
         service: String,
-        /// Where to present it. `None` when the server named anything but an https URL, or an http
-        /// one on this machine, because the token would go wherever this points.
+        /// Where to present it, set only for an https URL or an http one on this machine, because
+        /// we hand the token to whatever this points at.
         endpoint: Option<String>,
         /// The token itself.
         token: String,
@@ -218,7 +220,7 @@ pub enum Event {
         /// The human-readable description.
         text: String,
     },
-    /// A line we were about to send held a CR, LF or NUL, so it was not sent.
+    /// A line we were about to send held a CR, LF or NUL, so we did not send it.
     LineRefused {
         /// The line as it would have gone out.
         line: String,
@@ -774,8 +776,8 @@ impl Client {
                 before_msgid,
                 limit,
             } => {
-                // a host asks for the history of the chat in front of the user, so its catch-up
-                // goes ahead of the paced ones
+                // a host asks for the history of the chat in front of the user, so we send its
+                // catch-up before the paced ones
                 self.send_catch_up_now(&target);
                 let limit = self.history_limit(limit);
                 let selector = if before_msgid.is_some() {
@@ -885,7 +887,6 @@ impl Client {
             },
             #[cfg(feature = "voice")]
             Command::SendVoiceSignal { channel, signal } => {
-                use crate::voice::RTC_TAG;
                 let mut line = Message::new("TAGMSG", [channel]);
                 line.tags
                     .set(obby_proto::Tag::new(RTC_TAG, signal.to_json()));
@@ -922,8 +923,8 @@ impl Client {
             .is_some_and(|channel| channel.members.contains_key(&me))
     }
 
-    /// No more history than the server serves in one page, which it states as `CHATHISTORY=<n>`
-    /// with 0 meaning no limit.
+    /// Caps a history request at the page size the server states as `CHATHISTORY=<n>`, where 0
+    /// means no limit.
     fn history_limit(&self, wanted: u16) -> u16 {
         match self.isupport.number("CHATHISTORY") {
             Some(most) if most > 0 => wanted.min(u16::try_from(most).unwrap_or(u16::MAX)),
@@ -1140,7 +1141,8 @@ impl Client {
                 self.discarding = false;
                 continue;
             }
-            if line.len() == 1 {
+            let is_empty_line = line.len() == 1;
+            if is_empty_line {
                 continue;
             }
             // servers are not reliably UTF-8, and one bad byte must not cost us the line
@@ -1667,7 +1669,7 @@ impl Client {
     /// rather than falling through to the conversation.
     #[cfg(feature = "voice")]
     fn handle_rtc(&mut self, message: &Message) -> bool {
-        let Some(payload) = message.tag(crate::voice::RTC_TAG) else {
+        let Some(payload) = message.tag(RTC_TAG) else {
             return false;
         };
         let Some(channel) = message.param(0) else {

@@ -104,7 +104,7 @@ typedef enum obby_event_kind {
      */
     OBBY_EVENT_KIND_AUTH_TOKEN,
     /**
-     * A line we were about to send held a CR, LF or NUL, so it was not sent.
+     * A line we were about to send held a CR, LF or NUL, so we did not send it.
      */
     OBBY_EVENT_KIND_LINE_REFUSED,
 } obby_event_kind;
@@ -189,7 +189,7 @@ typedef enum obby_event_field {
      */
     OBBY_EVENT_FIELD_SERVICE,
     /**
-     * Where to present a token. Null when the server named anything but an https URL.
+     * Where to present a token. Set only for an https URL or an http one on this machine.
      */
     OBBY_EVENT_FIELD_ENDPOINT,
     /**

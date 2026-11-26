@@ -443,7 +443,7 @@ pub enum ObbyEventKind {
     BotsChanged,
     /// The server minted a bearer token for one of its services.
     AuthToken,
-    /// A line we were about to send held a CR, LF or NUL, so it was not sent.
+    /// A line we were about to send held a CR, LF or NUL, so we did not send it.
     LineRefused,
 }
 
@@ -490,7 +490,7 @@ pub enum ObbyEventField {
     Online,
     /// The network service a token is for.
     Service,
-    /// Where to present a token. Null when the server named anything but an https URL.
+    /// Where to present a token. Set only for an https URL or an http one on this machine.
     Endpoint,
     /// A bearer token. `Token` is already the name of a `005` token, which this is not.
     BearerToken,

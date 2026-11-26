@@ -33,10 +33,11 @@ pub(crate) const DEAD_LINK_MS: u64 = 10_000;
 /// forever, so the indicator expires on its own.
 pub(crate) const TYPING_EXPIRY_MS: u64 = 6_000;
 
-/// How many history catch-ups a reconnect sends at once, and how far apart it sends the rest.
-///
-/// Servers charge lag per command, so a burst of them would hold the user's own messages back.
+/// How many history catch-ups a reconnect sends at once. Servers charge lag per command, so we keep
+/// the burst small enough that the user's own messages still go out first.
 pub(crate) const CATCH_UP_BURST: usize = 4;
+
+/// How long a reconnect waits between the catch-ups that follow the first burst.
 pub(crate) const CATCH_UP_PACE_MS: u64 = 1_000;
 
 /// One named deadline a host can arm and later collect once it falls due.
