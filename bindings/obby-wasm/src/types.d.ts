@@ -861,7 +861,11 @@ context: Array<string>,
 /**
  * The human-readable description.
  */
-text: string, } | { "type": "raw_line", 
+text: string, } | { "type": "line_refused", 
+/**
+ * The line as it would have gone out.
+ */
+line: string, } | { "type": "raw_line", 
 /**
  * The parsed line.
  */

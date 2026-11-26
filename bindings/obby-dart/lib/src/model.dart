@@ -1977,6 +1977,7 @@ sealed class ObbyEvent {
       'typing_changed' => ObbyEventTypingChanged.fromJson(json),
       'presence_changed' => ObbyEventPresenceChanged.fromJson(json),
       'server_reply' => ObbyEventServerReply.fromJson(json),
+      'line_refused' => ObbyEventLineRefused.fromJson(json),
       'raw_line' => ObbyEventRawLine.fromJson(json),
       _ => throw ArgumentError.value(tag, 'type', 'unknown ObbyEvent variant'),
     };
@@ -2365,6 +2366,25 @@ class ObbyEventServerReply extends ObbyEvent {
 
   /// The human-readable description.
   final String text;
+}
+
+class ObbyEventLineRefused extends ObbyEvent {
+  const ObbyEventLineRefused({
+    required this.line,
+  });
+
+  factory ObbyEventLineRefused.fromJson(Map<String, dynamic> json) => ObbyEventLineRefused(
+    line: json['line'] as String,
+  );
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': 'line_refused',
+    'line': line,
+  };
+
+  /// The line as it would have gone out.
+  final String line;
 }
 
 class ObbyEventRawLine extends ObbyEvent {

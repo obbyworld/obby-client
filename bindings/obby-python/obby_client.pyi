@@ -534,11 +534,15 @@ class ObbyEventServerReply(TypedDict):
     context: list[str]
     text: str
 
+class ObbyEventLineRefused(TypedDict):
+    type: Literal["line_refused"]
+    line: str
+
 class ObbyEventRawLine(TypedDict):
     type: Literal["raw_line"]
     message: RawMessage
 
-ObbyEvent = Union[ObbyEventCapabilitiesAcknowledged, ObbyEventRegistered, ObbyEventIsupportToken, ObbyEventLoggedIn, ObbyEventSaslFailed, ObbyEventNickInUse, ObbyEventModelChanged, ObbyEventLinkDead, ObbyEventReconnectAfter, ObbyEventReconnectAbandoned, ObbyEventCommandTimedOut, ObbyEventAllowedCommandsChanged, ObbyEventBotsChanged, ObbyEventAuthToken, ObbyEventVoice, ObbyEventTypingChanged, ObbyEventPresenceChanged, ObbyEventServerReply, ObbyEventRawLine]
+ObbyEvent = Union[ObbyEventCapabilitiesAcknowledged, ObbyEventRegistered, ObbyEventIsupportToken, ObbyEventLoggedIn, ObbyEventSaslFailed, ObbyEventNickInUse, ObbyEventModelChanged, ObbyEventLinkDead, ObbyEventReconnectAfter, ObbyEventReconnectAbandoned, ObbyEventCommandTimedOut, ObbyEventAllowedCommandsChanged, ObbyEventBotsChanged, ObbyEventAuthToken, ObbyEventVoice, ObbyEventTypingChanged, ObbyEventPresenceChanged, ObbyEventServerReply, ObbyEventLineRefused, ObbyEventRawLine]
 
 
 OnOff = Literal["on", "off"]

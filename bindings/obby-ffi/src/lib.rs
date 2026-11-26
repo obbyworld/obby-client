@@ -443,6 +443,8 @@ pub enum ObbyEventKind {
     BotsChanged,
     /// The server minted a bearer token for one of its services.
     AuthToken,
+    /// A line we were about to send held a CR, LF or NUL, so it was not sent.
+    LineRefused,
 }
 
 /// One value on an [`ObbyEvent`].
@@ -492,6 +494,8 @@ pub enum ObbyEventField {
     Endpoint,
     /// A bearer token. `Token` is already the name of a `005` token, which this is not.
     BearerToken,
+    /// A protocol line, as it would have gone out.
+    Line,
 }
 
 /// One event, owned by the caller until [`obby_event_free`].
@@ -628,6 +632,10 @@ fn event_out(event: &Event) -> ObbyEvent {
             out.text(ObbyEventField::BearerToken, token);
         }
         Event::RawLine { .. } => out.kind = ObbyEventKind::RawLine,
+        Event::LineRefused { line } => {
+            out.kind = ObbyEventKind::LineRefused;
+            out.text(ObbyEventField::Line, line);
+        }
         // Event is non-exhaustive, so a version of the engine newer than this ABI reaches a C
         // caller as an unknown kind with its JSON intact rather than as a build failure
         _ => {}

@@ -216,6 +216,11 @@ pub enum Event {
         /// The human-readable description.
         text: String,
     },
+    /// A line we were about to send held a CR, LF or NUL, so it was not sent.
+    LineRefused {
+        /// The line as it would have gone out.
+        line: String,
+    },
     /// A line arrived that the engine has no dedicated handling for yet. Everything is surfaced, so
     /// a host is never blind to traffic the engine does not model.
     RawLine {
@@ -699,14 +704,20 @@ impl Client {
         // the three that land in a conversation need the model, the rest are pure translation
         match command {
             Command::SendMessage { target, text } => {
-                self.say(&Message::new("PRIVMSG", [target, text]));
+                for line in lines_of(&text) {
+                    self.say(&Message::new("PRIVMSG", [target.as_str(), line]));
+                }
             }
             Command::SendNotice { target, text } => {
-                self.say(&Message::new("NOTICE", [target, text]));
+                for line in lines_of(&text) {
+                    self.say(&Message::new("NOTICE", [target.as_str(), line]));
+                }
             }
             Command::SendAction { target, text } => {
-                let body = alloc::format!("\u{1}ACTION {text}\u{1}");
-                self.say(&Message::new("PRIVMSG", [target, body]));
+                for line in lines_of(&text) {
+                    let body = alloc::format!("\u{1}ACTION {line}\u{1}");
+                    self.say(&Message::new("PRIVMSG", [target.clone(), body]));
+                }
             }
             // both are remembered, because a reconnect has to reproduce them and the server will
             // not tell us what we asked for last time
@@ -759,7 +770,10 @@ impl Client {
             },
             Command::SetNick { nick } => Message::new("NICK", [nick]),
             Command::SetTopic { channel, topic } => match topic {
-                Some(topic) => Message::new("TOPIC", [channel, topic]),
+                Some(topic) => Message::new(
+                    "TOPIC",
+                    [channel, lines_of(&topic).collect::<Vec<_>>().join(" ")],
+                ),
                 // an empty trailing parameter clears a topic; omitting it asks what the topic is
                 None => Message::new("TOPIC", [channel, String::new()]),
             },
@@ -926,12 +940,14 @@ impl Client {
         message
             .tags
             .set(obby_proto::Tag::new("label", label.clone()));
+        if !self.send_line(&message) {
+            return None;
+        }
         self.labels.register(
             label.clone(),
             self.monotonic_ms.saturating_add(DEFAULT_TIMEOUT_MS),
             message.command.clone(),
         );
-        self.send_line(&message);
         Some(label)
     }
 
@@ -1016,7 +1032,8 @@ impl Client {
     pub fn handle_bytes(&mut self, data: &[u8]) {
         self.partial.extend_from_slice(data);
         loop {
-            let Some(end) = self.partial.iter().position(|b| *b == b'\n') else {
+            // we end a line at any CR or LF, so no parameter we parse carries one into a line we send
+            let Some(end) = self.partial.iter().position(|b| matches!(b, b'\r' | b'\n')) else {
                 if self.partial.len() > MAX_INBOUND_LINE {
                     self.partial.clear();
                     self.discarding = true;
@@ -1027,6 +1044,9 @@ impl Client {
             let line: Vec<u8> = self.partial.drain(..=end).collect();
             if self.discarding {
                 self.discarding = false;
+                continue;
+            }
+            if line.len() == 1 {
                 continue;
             }
             // servers are not reliably UTF-8, and one bad byte must not cost us the line
@@ -1084,10 +1104,19 @@ impl Client {
     }
 
     /// Queue a message to be written. Use this for anything the engine does not model yet.
-    pub fn send_line(&mut self, message: &Message) {
-        let mut line = alloc::format!("{message}").into_bytes();
+    ///
+    /// A line holding a CR, LF or NUL is refused with [`Event::LineRefused`] and returns false,
+    /// because the server would read whatever follows the break as a command of its own.
+    pub fn send_line(&mut self, message: &Message) -> bool {
+        let line = alloc::format!("{message}");
+        if line.contains(['\r', '\n', '\0']) {
+            self.events.push_back(Event::LineRefused { line });
+            return false;
+        }
+        let mut line = line.into_bytes();
         line.extend_from_slice(b"\r\n");
         self.outbox.push_back(line);
+        true
     }
 
     /// How far registration has got.
@@ -1783,6 +1812,11 @@ const MAX_INBOUND_LINE: usize = obby_proto::MAX_TAG_BYTES + obby_proto::MAX_LINE
 /// The batch type that carries replayed history.
 const CHATHISTORY_BATCH: &str = "chathistory";
 
+/// The non-empty lines of text a person typed, split at any CR or LF.
+fn lines_of(text: &str) -> impl Iterator<Item = &str> {
+    text.split(['\r', '\n']).filter(|line| !line.is_empty())
+}
+
 /// Put a message a server split across several lines back together.
 ///
 /// The lines arrive as separate `PRIVMSG`s inside a `draft/multiline` batch, and a host that
@@ -1900,6 +1934,58 @@ mod tests {
         assert_eq!(drain(&mut client), "");
         client.handle_bytes(b"c\r\n");
         assert_eq!(drain(&mut client), "PONG abc\r\n");
+    }
+
+    #[test]
+    fn ends_a_line_at_a_lone_cr_or_lf() {
+        let mut client = Client::new(Config::new("me"));
+        client.handle_bytes(b"PING :a\rPING :b\nPING :c\r");
+        client.handle_bytes(b"\n");
+        assert_eq!(drain(&mut client), "PONG a\r\nPONG b\r\nPONG c\r\n");
+        assert_eq!(client.dropped_lines(), 0, "an empty line is not a bad one");
+    }
+
+    #[test]
+    fn refuses_to_send_a_line_with_a_break_or_nul() {
+        let mut client = Client::new(Config::new("me"));
+        client.send_raw_line("PRIVMSG #c :hi\nQUIT");
+        client.part("#c", Some("bye\0".to_string()));
+        assert_eq!(drain(&mut client), "");
+        assert_eq!(
+            events(&mut client),
+            [
+                Event::LineRefused {
+                    line: "PRIVMSG #c hi\nQUIT".to_string()
+                },
+                Event::LineRefused {
+                    line: "PART #c bye\0".to_string()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn escapes_every_outgoing_tag_value() {
+        let mut client = Client::new(Config::new("me"));
+        client.add_reaction("#c", "m1", "a b;c\\d\r\n");
+        assert_eq!(
+            drain(&mut client),
+            "@+draft/react=a\\sb\\:c\\\\d\\r\\n;+draft/reply=m1 TAGMSG #c\r\n"
+        );
+    }
+
+    #[test]
+    fn sends_one_line_per_line_of_text() {
+        let mut client = Client::new(Config::new("me"));
+        client.send_message("#c", "one\r\ntwo\n\nthree\r");
+        client.send_action("#c", "waves\nsmiles");
+        client.set_topic("#c", Some("new\ntopic".to_string()));
+        assert_eq!(
+            drain(&mut client),
+            "PRIVMSG #c one\r\nPRIVMSG #c two\r\nPRIVMSG #c three\r\n\
+             PRIVMSG #c :\u{1}ACTION waves\u{1}\r\nPRIVMSG #c :\u{1}ACTION smiles\u{1}\r\n\
+             TOPIC #c :new topic\r\n"
+        );
     }
 
     #[test]

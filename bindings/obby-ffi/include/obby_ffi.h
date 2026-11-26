@@ -103,6 +103,10 @@ typedef enum obby_event_kind {
      * The server minted a bearer token for one of its services.
      */
     OBBY_EVENT_KIND_AUTH_TOKEN,
+    /**
+     * A line we were about to send held a CR, LF or NUL, so it was not sent.
+     */
+    OBBY_EVENT_KIND_LINE_REFUSED,
 } obby_event_kind;
 
 /**
@@ -192,6 +196,10 @@ typedef enum obby_event_field {
      * A bearer token. `Token` is already the name of a `005` token, which this is not.
      */
     OBBY_EVENT_FIELD_BEARER_TOKEN,
+    /**
+     * A protocol line, as it would have gone out.
+     */
+    OBBY_EVENT_FIELD_LINE,
 } obby_event_field;
 
 /**
